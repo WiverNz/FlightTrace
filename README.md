@@ -308,6 +308,26 @@ flighttrace/
   data/                               # SQLite database (gitignored)
 ```
 
+## Backend Docker image
+
+The root `Dockerfile` builds only the Rust backend. It does not build or serve
+the web frontend. Build and run it with a persistent Docker volume for SQLite:
+
+```bash
+docker build -t flighttrace-backend .
+docker run --rm \
+    --publish 8080:8080 \
+    --volume flighttrace-data:/data \
+    flighttrace-backend
+```
+
+The container listens on `0.0.0.0:8080` and stores its database at
+`/data/flighttrace.db`. Verify it with
+`curl http://127.0.0.1:8080/health`.
+
+This image is a backend-only packaging option. The Cargo and npm commands
+below remain the primary development workflow.
+
 ## Development
 
 Quality gates that must stay green:
