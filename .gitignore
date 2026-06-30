@@ -14,7 +14,11 @@ Thumbs.db
 
 # Editor folders that aren't shared.
 .idea/
-.vscode/
+
+# VS Code: track launch.json/tasks.json/*.example, ignore per-user env files.
+.vscode/flighttrace.env
+.vscode/*.local
+.vscode/settings.json
 
 # Claude Code per-user state. Tracked: .claude/settings.json and .claude/hooks/.
 .claude/.rust-touched

@@ -1,0 +1,126 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "CLI: demo",
+      "cargo": {
+        "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
+        "filter": { "name": "flighttrace", "kind": "bin" }
+      },
+      "args": ["demo"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "CLI: serve demo-only",
+      "cargo": {
+        "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
+        "filter": { "name": "flighttrace", "kind": "bin" }
+      },
+      "args": [
+        "serve",
+        "--bind",
+        "127.0.0.1:8080",
+        "--database",
+        "${workspaceFolder}/data/debug-flighttrace.db"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "CLI: serve + MAVLink",
+      "cargo": {
+        "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
+        "filter": { "name": "flighttrace", "kind": "bin" }
+      },
+      "args": [
+        "serve",
+        "--bind",
+        "127.0.0.1:8080",
+        "--database",
+        "${workspaceFolder}/data/debug-mavlink.db",
+        "--mavlink",
+        "udp://127.0.0.1:14550",
+        "--mission",
+        "${workspaceFolder}/examples/missions/simple_takeoff.yaml"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tests: workspace",
+      "cargo": {
+        "args": ["test", "--workspace", "--no-run"],
+        "filter": { "kind": "test" }
+      },
+      "args": ["--nocapture"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tests: pick crate",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--package=${input:cratePicker}"
+        ],
+        "filter": { "kind": "test" }
+      },
+      "args": ["${input:testFilter}", "--nocapture"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Web: Chrome against Vite",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web",
+      "sourceMaps": true,
+      "preLaunchTask": "web: vite dev"
+    },
+    {
+      "type": "msedge",
+      "request": "launch",
+      "name": "Web: Edge against Vite",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web",
+      "sourceMaps": true,
+      "preLaunchTask": "web: vite dev"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "cratePicker",
+      "type": "pickString",
+      "description": "Crate to test",
+      "options": [
+        "flighttrace-core",
+        "flighttrace-demo",
+        "flighttrace-storage",
+        "flighttrace-api",
+        "flighttrace-mavlink",
+        "flighttrace-assertions",
+        "flighttrace-cli"
+      ],
+      "default": "flighttrace-core"
+    },
+    {
+      "id": "testFilter",
+      "type": "promptString",
+      "description": "Test name substring, leave blank for all",
+      "default": ""
+    }
+  ]
+}
