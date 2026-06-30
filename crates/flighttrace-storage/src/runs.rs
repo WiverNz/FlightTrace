@@ -81,6 +81,40 @@ impl<'a> MissionRunRepo<'a> {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// Update a run's status / failure reason / `ended_at`.
+    ///
+    /// Returns `Ok(false)` when no row with that id exists.
+    pub async fn update_status(
+        &self,
+        id: MissionRunId,
+        status: MissionStatus,
+        failure_reason: Option<FailureReason>,
+        ended_at: Option<flighttrace_core::Timestamp>,
+    ) -> StorageResult<bool> {
+        let failure_reason_text = match failure_reason {
+            Some(reason) => Some(unit_enum_to_text(&reason)?),
+            None => None,
+        };
+        let ended_at_text = match ended_at {
+            Some(ts) => Some(timestamp_to_text(ts)?),
+            None => None,
+        };
+        let result = sqlx::query(
+            r#"
+            UPDATE mission_runs
+            SET status = ?1, failure_reason = ?2, ended_at = ?3
+            WHERE id = ?4
+            "#,
+        )
+        .bind(unit_enum_to_text(&status)?)
+        .bind(failure_reason_text)
+        .bind(ended_at_text)
+        .bind(id_to_text(id.into_inner()))
+        .execute(self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 pub(crate) async fn insert_run_inner(

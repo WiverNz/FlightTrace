@@ -5,6 +5,7 @@ members = [
     "crates/flighttrace-demo",
     "crates/flighttrace-storage",
     "crates/flighttrace-api",
+    "crates/flighttrace-mavlink",
     "crates/flighttrace-cli",
 ]
 
@@ -37,8 +38,19 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 http = "1"
 http-body-util = "0.1"
+# rust-mavlink 0.18.0; `dialect-common` is the cross-stack default. PX4 also speaks common.
+# We only need read-only ingestion, so transport-udp + std + tokio are the minimum features.
+mavlink = { version = "0.18", default-features = false, features = [
+    "std",
+    "tokio",
+    "transport-udp",
+    "dialect-common",
+    "dialect-ardupilotmega",
+] }
+async-trait = "0.1"
 
 flighttrace-core = { path = "crates/flighttrace-core" }
 flighttrace-demo = { path = "crates/flighttrace-demo" }
 flighttrace-storage = { path = "crates/flighttrace-storage" }
 flighttrace-api = { path = "crates/flighttrace-api" }
+flighttrace-mavlink = { path = "crates/flighttrace-mavlink" }

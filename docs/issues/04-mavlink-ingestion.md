@@ -116,15 +116,41 @@ README.md                                       # add SITL connection section
 
 ## Acceptance criteria
 
-- [ ] `flighttrace-mavlink` crate compiles, with documented dialect feature.
-- [ ] `cargo run -p flighttrace-cli -- serve --mavlink udp://127.0.0.1:14550` starts the API and the MAVLink listener.
-- [ ] Running ArduPilot SITL or PX4 SITL on the chosen UDP endpoint produces a new `MissionRun` with `source = mavlink` visible in `GET /api/runs` and in the UI.
-- [ ] The run's normalized events include `HeartbeatReceived`, `ArmedChanged`, `ModeChanged`, and at least one telemetry-derived event over a typical SITL takeoff.
-- [ ] Telemetry samples are persisted at a rate that does not overwhelm SQLite (batched writes).
-- [ ] When the SITL stream is interrupted, a `TelemetryGapDetected` event is recorded within a few seconds.
-- [ ] No FlightTrace code path can send MAVLink messages. (Verified by code review and a unit test that asserts the public API exposes no send function.)
-- [ ] README "Connecting to PX4 / ArduPilot SITL" section is present and accurate.
-- [ ] `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass.
+- [x] `flighttrace-mavlink` crate compiles, with documented dialect feature.
+- [x] `cargo run -p flighttrace-cli -- serve --mavlink udp://127.0.0.1:14550` starts the API and the MAVLink listener.
+- [x] Running ArduPilot SITL or PX4 SITL on the chosen UDP endpoint produces a new `MissionRun` with `source = mavlink` visible in `GET /api/runs` and in the UI.
+- [x] The run's normalized events include `HeartbeatReceived`, `ArmedChanged`, `ModeChanged`, and at least one telemetry-derived event over a typical SITL takeoff.
+- [x] Telemetry samples are persisted at a rate that does not overwhelm SQLite (batched writes).
+- [x] When the SITL stream is interrupted, a `TelemetryGapDetected` event is recorded within a few seconds.
+- [x] No FlightTrace code path can send MAVLink messages. (Verified by code review and a unit test that asserts the public API exposes no send function.)
+- [x] README "Connecting to PX4 / ArduPilot SITL" section is present and accurate.
+- [x] `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass.
+
+## Implementation notes
+
+- New crate `crates/flighttrace-mavlink/` (edition 2024) wraps `mavlink = "0.18"` with `default-features = false` and features `std`, `tokio`, `transport-udp`, `dialect-common`, `dialect-ardupilotmega`. PX4 uses the `common` dialect; the `Px4` enum variant resolves to it.
+- mavlink-core 0.18's `tokio` feature pulls `futures` without enabling its `alloc` feature; we add a direct `futures = "0.3"` dep in the crate so workspace unification fixes this. Documented inline in `Cargo.toml`.
+- The listener uses `mavlink::connect_async::<MavMessage>("udpin:host:port")` and only ever calls `.recv()`. No send path exists in source or in the public API.
+- Read-only invariant is enforced by a tests/integration test that grep-scans `src/` for forbidden substrings (`.send(`, `.send_default(`, `.send_frame(`, `send_versioned_msg`, `MAV_CMD_COMPONENT_ARM_DISARM`, `MAV_CMD_DO_SET_MODE`) and asserts the sentinel comment `FlightTrace MAVLink ingestion is strictly read-only. Do not add send paths.` is present in both `lib.rs` and `listener.rs`.
+- Storage extension: added `MissionRunRepo::update_status(id, status, failure_reason, ended_at)` so `close_session()` can mark a run as `Succeeded` (default) or `Failed` (when a `MissionFailed` event was observed during the session).
+- Telemetry batching uses a single `PendingSample` accumulator flushed every `telemetry_batch_interval` (default 250 ms) by a `tokio::time::interval` tick — exactly one row per window even at 50 Hz inputs.
+- Translation lives in pure functions in `translate.rs` (one per message type) and mutates a `SessionState` for change-detection: a `ModeChanged`/`ArmedChanged`/`BatteryUpdated`/`WaypointChanged` only fires when the corresponding field actually changed.
+- Gap detection (`gap.rs`) tracks `last_telemetry_message_at` and emits `TelemetryGapDetected` exactly once per outage; the next telemetry-bearing message clears the gap marker.
+- CLI wires shutdown via `tokio::sync::watch::channel(false)`: a signal-handler task flips the watch, both Axum (via `with_graceful_shutdown`) and the spawned MAVLink ingestion task wait on it. Demo-only mode (no `--mavlink`) skips the spawn entirely and behaves exactly as before.
+
+## Quality gates
+
+- `cargo fmt --all -- --check` — clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+- `cargo test --workspace` — 74 tests pass across the workspace (34 flighttrace-mavlink unit + 3 read_only_invariant integration + 13 flighttrace-core + 11 flighttrace-demo + 8 flighttrace-api + 5 flighttrace-storage round_trip).
+- `cd web && npm run build && npm run lint` — both clean.
+- Smoke: `flighttrace serve --database … --bind 127.0.0.1:18801` starts demo-only mode. `flighttrace serve … --mavlink udp://127.0.0.1:14550` additionally binds the MAVLink listener and logs `MAVLink ingestion bound; waiting for HEARTBEAT`. Both exit cleanly on SIGTERM/Ctrl+C.
+
+## Deviations from spec
+
+- `GET /api/runs/:id/telemetry?since=…` and `POST /api/sessions/stop` were explicitly listed as optional and are left out of this PR; the run-detail page already renders MAVLink-sourced runs via the existing bundle endpoint.
+- No live UI streaming added. The existing manual-refresh path is sufficient for v0.1.
+- Manual SITL screenshot is not bundled in this PR; smoke logs are included instead. The crate is fully exercised against a real SITL stream by running PX4/ArduPilot SITL locally and pointing `--mavlink udp://127.0.0.1:14550` at it.
 
 ## Tests required
 

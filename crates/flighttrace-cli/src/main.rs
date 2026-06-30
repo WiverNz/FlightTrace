@@ -2,18 +2,23 @@
 //!
 //! `demo` prints the deterministic `TAKEOFF_TIMEOUT` bundle to stdout as JSON.
 //! `serve` opens (or creates) a SQLite database, runs the embedded
-//! migrations, and starts the Axum API on the requested address.
+//! migrations, and starts the Axum API on the requested address. Pass
+//! `--mavlink udp://host:port` to additionally bind a read-only MAVLink UDP
+//! listener (issue 4) that persists live SITL traffic into the same database.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use sqlx::SqlitePool;
 use tokio::net::TcpListener;
-use tracing::info;
+use tokio::sync::watch;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use flighttrace_api::{AppState, build};
+use flighttrace_mavlink::{Dialect, MavlinkConfig, run_ingestion};
 use flighttrace_storage::connect;
 
 #[derive(Debug, Parser)]
@@ -40,6 +45,15 @@ enum Command {
         /// Path to the SQLite database file. Parent directory is created if missing.
         #[arg(long, default_value = "./data/flighttrace.db")]
         database: PathBuf,
+        /// Optional MAVLink UDP endpoint to ingest read-only telemetry from
+        /// (e.g. `udp://127.0.0.1:14550`). Absent = demo-only mode, exactly
+        /// like before issue 4.
+        #[arg(long)]
+        mavlink: Option<String>,
+        /// MAVLink dialect to decode incoming traffic with. PX4 also speaks
+        /// `common`, so the default is fine for both stacks.
+        #[arg(long, default_value = "common")]
+        mavlink_dialect: String,
     },
 }
 
@@ -49,7 +63,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Demo => run_demo(),
-        Command::Serve { bind, database } => run_serve(bind, &database),
+        Command::Serve {
+            bind,
+            database,
+            mavlink,
+            mavlink_dialect,
+        } => run_serve(bind, &database, mavlink.as_deref(), &mavlink_dialect),
     }
 }
 
@@ -71,11 +90,31 @@ fn run_demo() -> Result<()> {
     Ok(())
 }
 
-fn run_serve(bind: SocketAddr, database: &Path) -> Result<()> {
+fn run_serve(
+    bind: SocketAddr,
+    database: &Path,
+    mavlink_endpoint: Option<&str>,
+    mavlink_dialect: &str,
+) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("build tokio runtime")?;
+
+    let mavlink_config = match mavlink_endpoint {
+        Some(endpoint) => {
+            let dialect = Dialect::parse(mavlink_dialect).with_context(|| {
+                format!(
+                    "invalid --mavlink-dialect `{mavlink_dialect}` (expected one of: common, ardupilotmega, px4)"
+                )
+            })?;
+            Some(
+                MavlinkConfig::new(endpoint, dialect)
+                    .with_context(|| format!("parse --mavlink endpoint `{endpoint}`"))?,
+            )
+        }
+        None => None,
+    };
 
     runtime.block_on(async move {
         if let Some(parent) = database.parent()
@@ -100,13 +139,64 @@ fn run_serve(bind: SocketAddr, database: &Path) -> Result<()> {
             .context("read bound listener address")?;
         info!(%local, "FlightTrace API listening");
 
-        let router = build(AppState::new(pool));
-        axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .context("axum server")?;
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        // Signal-handling task: flips the watch on Ctrl+C / SIGTERM.
+        tokio::spawn({
+            let shutdown_tx = shutdown_tx.clone();
+            async move {
+                shutdown_signal().await;
+                let _ = shutdown_tx.send(true);
+            }
+        });
 
-        Ok::<(), anyhow::Error>(())
+        // Optional MAVLink ingestion: spawned alongside Axum, shares the pool.
+        let mavlink_handle = mavlink_config.map(|config| {
+            let pool: SqlitePool = pool.clone();
+            let mut rx = shutdown_rx.clone();
+            let shutdown_fut = async move {
+                while !*rx.borrow_and_update() {
+                    if rx.changed().await.is_err() {
+                        return;
+                    }
+                }
+            };
+            tokio::spawn(async move {
+                if let Err(err) = run_ingestion(pool, config, shutdown_fut).await {
+                    warn!(%err, "MAVLink ingestion exited with error");
+                }
+            })
+        });
+
+        // Axum graceful-shutdown future.
+        let axum_shutdown = {
+            let mut rx = shutdown_rx.clone();
+            async move {
+                while !*rx.borrow_and_update() {
+                    if rx.changed().await.is_err() {
+                        return;
+                    }
+                }
+            }
+        };
+
+        let router = build(AppState::new(pool.clone()));
+        let serve_result = axum::serve(listener, router)
+            .with_graceful_shutdown(axum_shutdown)
+            .await
+            .context("axum server");
+
+        // Ensure mavlink listener is signalled if axum exited early.
+        let _ = shutdown_tx.send(true);
+
+        if let Some(handle) = mavlink_handle
+            && let Err(err) = handle.await
+        {
+            warn!(%err, "MAVLink ingestion task join error");
+        }
+
+        drop(shutdown_rx);
+
+        serve_result
     })?;
 
     Ok(())

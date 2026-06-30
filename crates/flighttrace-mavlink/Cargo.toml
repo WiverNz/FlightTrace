@@ -1,0 +1,33 @@
+[package]
+name = "flighttrace-mavlink"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Read-only MAVLink ingestion for FlightTrace (issue 4)."
+
+[dependencies]
+flighttrace-core.workspace = true
+flighttrace-storage.workspace = true
+sqlx.workspace = true
+
+# rust-mavlink 0.18 pinned via the workspace dep. We deliberately do NOT enable
+# any send / write functionality; the listener only calls `.recv()` on the
+# AsyncMavConnection trait.
+mavlink.workspace = true
+async-trait.workspace = true
+# mavlink-core 0.18's `tokio` feature pulls `futures` but forgets to enable
+# `alloc`, so `futures::lock::Mutex` fails to resolve. Forcing the default
+# (alloc-enabled) feature set here patches the unification.
+futures = "0.3"
+
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+time.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync", "test-util"] }
