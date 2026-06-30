@@ -1,18 +1,22 @@
 //! Handlers under `/api/runs`.
 
+use std::path::PathBuf;
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use uuid::Uuid;
 
-use flighttrace_core::MissionRunId;
+use flighttrace_assertions::{EvaluationInput, evaluate, load_mission_file};
+use flighttrace_core::{MissionRun, MissionRunId, MissionStatus};
 use flighttrace_storage::{
     AssertionResultRepo, FailureReportRepo, MissionRunRepo, NormalizedEventRepo,
     TelemetrySampleRepo,
 };
 
 use crate::dto::{
-    AssertionResultDto, FailureReportDto, MissionRunDto, NormalizedEventDto, TelemetrySampleDto,
+    AssertionResultDto, FailureReportDto, MissionRunDto, NormalizedEventDto, ReevaluateBody,
+    ReevaluateResponse, TelemetrySampleDto,
 };
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -114,6 +118,111 @@ pub async fn failure_report(
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(report.into()))
+}
+
+/// `POST /api/runs/:id/reevaluate` — re-run the assertion engine against a
+/// run's stored events and samples.
+///
+/// The handler resolves a mission YAML (body's `missionPath` overrides the
+/// run's tagged mission file under `examples/missions/`), evaluates it, and
+/// rewrites the run's assertion results, failure report, and headline
+/// status to match the new verdict.
+pub async fn reevaluate(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    body: Option<Json<ReevaluateBody>>,
+) -> ApiResult<Json<ReevaluateResponse>> {
+    let id = MissionRunId::new(id);
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+
+    let run = MissionRunRepo::new(state.pool())
+        .get(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    let path = resolve_mission_path(&run, body.mission_path.as_deref())?;
+    let spec = load_mission_file(&path)?;
+
+    let events = NormalizedEventRepo::new(state.pool())
+        .list_for_run(id)
+        .await?;
+    let samples = TelemetrySampleRepo::new(state.pool())
+        .list_for_run(id)
+        .await?;
+
+    let output = evaluate(
+        &spec,
+        &EvaluationInput {
+            run: &run,
+            events: &events,
+            samples: &samples,
+        },
+    );
+
+    let assertion_repo = AssertionResultRepo::new(state.pool());
+    assertion_repo.replace_for_run(id, &output.results).await?;
+
+    let failure_repo = FailureReportRepo::new(state.pool());
+    let run_repo = MissionRunRepo::new(state.pool());
+    match &output.failure_report {
+        Some(report) => {
+            failure_repo.upsert_for_run(report).await?;
+            let ended_at = run.ended_at.unwrap_or(report.generated_at);
+            run_repo
+                .update_status(
+                    id,
+                    MissionStatus::Failed,
+                    Some(report.reason),
+                    Some(ended_at),
+                )
+                .await?;
+        }
+        None => {
+            failure_repo.delete_for_run(id).await?;
+            // Don't flip a still-running mission to Succeeded — only conclude
+            // runs that have already ended.
+            if run.ended_at.is_some() {
+                run_repo
+                    .update_status(id, MissionStatus::Succeeded, None, run.ended_at)
+                    .await?;
+            }
+        }
+    }
+
+    Ok(Json(ReevaluateResponse {
+        assertions: output
+            .results
+            .into_iter()
+            .map(AssertionResultDto::from)
+            .collect(),
+        failure_report: output.failure_report.map(FailureReportDto::from),
+    }))
+}
+
+/// Resolve the on-disk mission YAML for a re-evaluation request.
+///
+/// Explicit `mission_path` wins; otherwise we look under
+/// `examples/missions/<run.mission>.yaml`. The run's `mission` field is the
+/// label set when the run was ingested, so this assumes mission YAMLs are
+/// kept in the standard examples directory under a matching basename.
+fn resolve_mission_path(run: &MissionRun, override_path: Option<&str>) -> ApiResult<PathBuf> {
+    if let Some(path) = override_path {
+        if path.is_empty() {
+            return Err(ApiError::BadRequest(
+                "missionPath must not be empty".to_string(),
+            ));
+        }
+        return Ok(PathBuf::from(path));
+    }
+    if run.mission.is_empty() {
+        return Err(ApiError::BadRequest(
+            "run has no tagged mission; supply missionPath in the request body".to_string(),
+        ));
+    }
+    Ok(PathBuf::from(format!(
+        "examples/missions/{}.yaml",
+        run.mission
+    )))
 }
 
 async fn ensure_run_exists(state: &AppState, id: MissionRunId) -> ApiResult<()> {

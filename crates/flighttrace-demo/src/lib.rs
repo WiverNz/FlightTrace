@@ -155,7 +155,7 @@ mod tests {
             .find(|a| a.outcome == AssertionOutcome::Fail);
         assert!(pass_count >= 1, "expected at least one passing assertion");
         let fail = fail.expect("expected at least one failing assertion");
-        assert_eq!(fail.name, "takeoff_reaches_10m");
+        assert_eq!(fail.name, "takeoff.altitude_at_least_m");
     }
 
     #[test]

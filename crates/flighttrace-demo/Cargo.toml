@@ -8,6 +8,7 @@ description = "Deterministic demo mission runs for FlightTrace (TAKEOFF_TIMEOUT 
 
 [dependencies]
 flighttrace-core = { workspace = true }
+flighttrace-assertions = { workspace = true }
 serde = { workspace = true }
 time = { workspace = true }
 

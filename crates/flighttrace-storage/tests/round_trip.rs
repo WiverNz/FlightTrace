@@ -39,7 +39,14 @@ async fn full_bundle_round_trip() {
     assert_eq!(loaded.run, bundle.run);
     assert_eq!(loaded.events, bundle.events);
     assert_eq!(loaded.telemetry, bundle.telemetry);
-    assert_eq!(loaded.assertions, bundle.assertions);
+    // Storage reads assertions ordered by (evaluated_at, id); the engine
+    // emits them in spec-then-priority order. Compare as sets so we don't
+    // couple the engine's emission order to SQL's tiebreak rule.
+    let mut got = loaded.assertions.clone();
+    let mut want = bundle.assertions.clone();
+    got.sort_by_key(|a| a.id);
+    want.sort_by_key(|a| a.id);
+    assert_eq!(got, want);
     assert_eq!(loaded.failure_report, bundle.failure_report);
 }
 

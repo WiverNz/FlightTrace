@@ -16,6 +16,7 @@ flighttrace-demo.workspace = true
 flighttrace-storage.workspace = true
 flighttrace-api.workspace = true
 flighttrace-mavlink.workspace = true
+flighttrace-assertions.workspace = true
 sqlx.workspace = true
 
 serde_json.workspace = true

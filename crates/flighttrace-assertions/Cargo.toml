@@ -1,0 +1,16 @@
+[package]
+name = "flighttrace-assertions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "YAML-driven assertion engine and failure-report generator (issue 5)."
+
+[dependencies]
+flighttrace-core.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tracing.workspace = true
+uuid.workspace = true

@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use flighttrace_assertions::MissionSpec;
+
 use crate::error::{MavlinkIngestError, MavlinkIngestResult};
 
 /// MAVLink dialect choice. PX4 does not have a separate dialect — it speaks
@@ -63,6 +65,10 @@ pub struct MavlinkConfig {
     pub session_idle_timeout: Duration,
     /// How often the listener flushes the in-flight telemetry batch.
     pub telemetry_batch_interval: Duration,
+    /// Pre-parsed mission spec to evaluate against when each session ends.
+    /// Without it, session close still updates run status from the
+    /// `MissionFailed` flag but produces no `FailureReport`.
+    pub mission: Option<MissionSpec>,
 }
 
 impl MavlinkConfig {
@@ -77,6 +83,7 @@ impl MavlinkConfig {
             telemetry_gap_threshold: Duration::from_secs(2),
             session_idle_timeout: Duration::from_secs(30),
             telemetry_batch_interval: Duration::from_millis(250),
+            mission: None,
         })
     }
 

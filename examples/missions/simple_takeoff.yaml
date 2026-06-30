@@ -1,0 +1,16 @@
+mission: simple_takeoff
+vehicle: ardupilot_copter
+steps:
+  - name: connect
+    expect:
+      heartbeat_within_sec: 5
+  - name: arm
+    expect:
+      armed: true
+      within_sec: 5
+  - name: takeoff
+    expect:
+      altitude_at_least_m: 10
+      within_sec: 30
+      mode_not_changes: true
+      no_telemetry_gap_longer_than_sec: 2

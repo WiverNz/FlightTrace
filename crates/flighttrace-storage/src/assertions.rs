@@ -41,6 +41,25 @@ impl<'a> AssertionResultRepo<'a> {
         Ok(())
     }
 
+    /// Replace every assertion result for a run with the supplied set, in one
+    /// transaction. Used by the assertion engine when it (re-)evaluates a run.
+    pub async fn replace_for_run(
+        &self,
+        run_id: MissionRunId,
+        results: &[AssertionResult],
+    ) -> StorageResult<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM assertion_results WHERE run_id = ?1")
+            .bind(id_to_text(run_id.into_inner()))
+            .execute(&mut *tx)
+            .await?;
+        for result in results {
+            insert_assertion_in_tx(&mut tx, result).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// List assertion results for a run ordered by `evaluated_at ASC`.
     pub async fn list_for_run(&self, run_id: MissionRunId) -> StorageResult<Vec<AssertionResult>> {
         let rows = sqlx::query(

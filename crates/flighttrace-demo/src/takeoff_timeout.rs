@@ -1,22 +1,25 @@
 //! The deterministic `TAKEOFF_TIMEOUT` scenario.
 //!
-//! Everything in this module is fixed at compile time: the run identifier,
-//! every event identifier, every timestamp offset, the altitude curve, the
-//! assertion verdicts, and the failure report text. There is no randomness
-//! and no clock dependency.
+//! Events, telemetry samples, and run metadata are all fixed at compile time;
+//! the assertion verdicts and the failure report come from the real engine
+//! (`flighttrace-assertions`) parsing `examples/missions/simple_takeoff.yaml`
+//! and evaluating it against this curated bundle. There is no randomness and
+//! no clock dependency.
 
 use time::Duration;
 use time::OffsetDateTime;
 use time::macros::datetime;
 
+use flighttrace_assertions::{EvaluationInput, evaluate, parse_mission_yaml};
 use flighttrace_core::{
-    AssertionOutcome, AssertionResult, AssertionResultId, EventId, Evidence, FailureReason,
-    FailureReport, FailureReportId, MissionPhase, MissionRun, MissionRunId, MissionSource,
-    MissionStatus, NormalizedEvent, NormalizedEventKind, PhaseTransition, TelemetrySample,
-    Timestamp,
+    EventId, FailureReason, MissionPhase, MissionRun, MissionRunId, MissionSource, MissionStatus,
+    NormalizedEvent, NormalizedEventKind, PhaseTransition, TelemetrySample, Timestamp,
 };
 
 use crate::DemoRun;
+
+/// YAML mission spec the demo evaluates against.
+const SIMPLE_TAKEOFF_YAML: &str = include_str!("../../../examples/missions/simple_takeoff.yaml");
 
 /// Epoch used as `t = 0` for the demo run.
 const DEMO_EPOCH: OffsetDateTime = datetime!(2025-01-01 00:00:00 UTC);
@@ -24,13 +27,6 @@ const DEMO_EPOCH: OffsetDateTime = datetime!(2025-01-01 00:00:00 UTC);
 /// Run id for the demo bundle (stable across calls).
 const DEMO_RUN_ID: MissionRunId =
     MissionRunId::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0001);
-
-/// Failure report id for the demo bundle.
-const DEMO_FAILURE_REPORT_ID: FailureReportId =
-    FailureReportId::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0002);
-
-/// Target altitude the assertion expects (and the vehicle never reaches).
-const TARGET_ALTITUDE_M: f64 = 10.0;
 
 /// Hard-coded telemetry samples: `(seconds_from_epoch, altitude_m, vertical_speed_mps)`.
 ///
@@ -107,10 +103,9 @@ pub fn build() -> DemoRun {
     // STATUSTEXT warning at t+7.5s.
     let stall_offset = 7.5;
     let mut emitted_statustext = false;
-    let mut statustext_event_id: Option<EventId> = None;
     for &(offset, altitude_m, _vs) in TELEMETRY {
         if !emitted_statustext && offset >= stall_offset {
-            let id = push_event(
+            push_event(
                 &mut events,
                 stall_offset,
                 NormalizedEventKind::StatustextReceived {
@@ -118,7 +113,6 @@ pub fn build() -> DemoRun {
                     text: "EKF altitude variance".into(),
                 },
             );
-            statustext_event_id = Some(id);
             emitted_statustext = true;
         }
         push_event(
@@ -128,16 +122,10 @@ pub fn build() -> DemoRun {
         );
     }
 
-    // Assertion + failure events.
-    let assertion_failed_event_id = push_event(
-        &mut events,
-        12.0,
-        NormalizedEventKind::AssertionFailed {
-            assertion_name: "takeoff_reaches_10m".into(),
-            detail: "max_altitude=2.4m target=10.0m".into(),
-        },
-    );
-    let mission_failed_event_id = push_event(
+    // The vehicle (autopilot-equivalent in this demo) signals mission failure
+    // at t+12.5s. The assertion engine independently produces the matching
+    // FailureReport from the bundle below.
+    push_event(
         &mut events,
         12.5,
         NormalizedEventKind::MissionFailed {
@@ -160,12 +148,6 @@ pub fn build() -> DemoRun {
             },
         )
         .collect();
-
-    // Peak / stall altitude for evidence and assertion detail.
-    let max_altitude = telemetry
-        .iter()
-        .map(|s| s.altitude_m)
-        .fold(f64::MIN, f64::max);
 
     // Phase transitions — the mission timeline.
     let phases = vec![
@@ -206,82 +188,26 @@ pub fn build() -> DemoRun {
         phases,
     };
 
-    // Assertion results — hard-coded in issue 1; issue 5 will replace these
-    // with output from `flighttrace-assertions` while keeping the same shape.
-    let assertions = vec![
-        AssertionResult {
-            id: AssertionResultId::from_u128(0x0010),
-            run_id: DEMO_RUN_ID,
-            name: "heartbeat_within_5s".into(),
-            outcome: AssertionOutcome::Pass,
-            detail: "Heartbeat received 0.5s after connect.".into(),
-            evaluated_at: at(0.5),
-        },
-        AssertionResult {
-            id: AssertionResultId::from_u128(0x0011),
-            run_id: DEMO_RUN_ID,
-            name: "armed_within_5s".into(),
-            outcome: AssertionOutcome::Pass,
-            detail: "Vehicle armed 2.0s after connect.".into(),
-            evaluated_at: at(2.0),
-        },
-        AssertionResult {
-            id: AssertionResultId::from_u128(0x0012),
-            run_id: DEMO_RUN_ID,
-            name: "takeoff_reaches_10m".into(),
-            outcome: AssertionOutcome::Fail,
-            detail: format!("max_altitude={max_altitude:.1}m target={TARGET_ALTITUDE_M:.1}m"),
-            evaluated_at: at(12.0),
-        },
-    ];
-
-    // Failure report — the headline artefact. Evidence cites concrete events
-    // and the stall sample.
-    let mut evidence: Vec<Evidence> = Vec::new();
-    evidence.push(Evidence::Note("Takeoff command was accepted.".into()));
-    evidence.push(Evidence::Note("Vehicle armed successfully.".into()));
-    evidence.push(Evidence::Note(format!(
-        "Target altitude was {TARGET_ALTITUDE_M:.1} m."
-    )));
-    evidence.push(Evidence::Note(format!(
-        "Maximum reached altitude was only {max_altitude:.1} m."
-    )));
-    evidence.push(Evidence::Note(
-        "Vertical speed dropped near zero before reaching target altitude.".into(),
-    ));
-    evidence.push(Evidence::Note("Last known mode: GUIDED.".into()));
-    if let Some(id) = statustext_event_id {
-        evidence.push(Evidence::Event(id));
-    }
-    evidence.push(Evidence::Statustext {
-        at: at(stall_offset),
-        text: "EKF altitude variance".into(),
-    });
-    evidence.push(Evidence::Sample {
-        at: at(stall_offset),
-        field: "altitude_m".into(),
-        value: format!("{max_altitude:.1}"),
-    });
-    evidence.push(Evidence::Event(assertion_failed_event_id));
-    evidence.push(Evidence::Event(mission_failed_event_id));
-
-    let failure_report = FailureReport {
-        id: DEMO_FAILURE_REPORT_ID,
-        run_id: DEMO_RUN_ID,
-        reason: FailureReason::TakeoffTimeout,
-        summary: "Mission failed: TAKEOFF_TIMEOUT".into(),
-        evidence,
-        likely_cause: "The vehicle stopped climbing before reaching target altitude. \
-             Check estimator health, takeoff parameters, or mission timeout threshold."
-            .into(),
-        generated_at: ended_at,
+    // Run the real assertion engine against the bundle. The engine produces
+    // deterministic IDs for results and the failure report, so two calls
+    // yield byte-identical JSON.
+    let spec = parse_mission_yaml(SIMPLE_TAKEOFF_YAML)
+        .expect("bundled simple_takeoff.yaml must always parse");
+    let input = EvaluationInput {
+        run: &run,
+        events: &events,
+        samples: &telemetry,
     };
+    let evaluation = evaluate(&spec, &input);
+    let failure_report = evaluation
+        .failure_report
+        .expect("takeoff bundle must produce a failure report");
 
     DemoRun {
         run,
         events,
         telemetry,
-        assertions,
+        assertions: evaluation.results,
         failure_report,
     }
 }

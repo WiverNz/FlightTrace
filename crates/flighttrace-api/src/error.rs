@@ -7,6 +7,7 @@ use serde::Serialize;
 use thiserror::Error;
 use tracing::error;
 
+use flighttrace_assertions::AssertionError;
 use flighttrace_storage::StorageError;
 
 /// Errors that can be returned from API handlers.
@@ -23,6 +24,15 @@ pub enum ApiError {
     /// A request body could not be parsed.
     #[error("invalid JSON: {0}")]
     BadJson(#[from] serde_json::Error),
+
+    /// A 400-class problem with the request: invalid YAML, missing mission
+    /// file, missing reference, etc.
+    #[error("{0}")]
+    BadRequest(String),
+
+    /// The assertion engine rejected the supplied mission spec.
+    #[error("invalid mission spec: {0}")]
+    Assertion(#[from] AssertionError),
 }
 
 impl ApiError {
@@ -32,6 +42,8 @@ impl ApiError {
             ApiError::Storage(StorageError::NotFound) => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
             ApiError::BadJson(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            ApiError::Assertion(_) => (StatusCode::BAD_REQUEST, "bad_request"),
         }
     }
 }

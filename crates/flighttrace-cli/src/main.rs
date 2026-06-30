@@ -18,6 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use flighttrace_api::{AppState, build};
+use flighttrace_assertions::load_mission_file;
 use flighttrace_mavlink::{Dialect, MavlinkConfig, run_ingestion};
 use flighttrace_storage::connect;
 
@@ -54,6 +55,12 @@ enum Command {
         /// `common`, so the default is fine for both stacks.
         #[arg(long, default_value = "common")]
         mavlink_dialect: String,
+        /// Path to a mission YAML to evaluate against when each MAVLink
+        /// session ends. Without it, ingestion still classifies sessions
+        /// from the in-band `MissionFailed` flag but produces no
+        /// `FailureReport`.
+        #[arg(long)]
+        mission: Option<PathBuf>,
     },
 }
 
@@ -68,7 +75,14 @@ fn main() -> Result<()> {
             database,
             mavlink,
             mavlink_dialect,
-        } => run_serve(bind, &database, mavlink.as_deref(), &mavlink_dialect),
+            mission,
+        } => run_serve(
+            bind,
+            &database,
+            mavlink.as_deref(),
+            &mavlink_dialect,
+            mission.as_deref(),
+        ),
     }
 }
 
@@ -95,11 +109,26 @@ fn run_serve(
     database: &Path,
     mavlink_endpoint: Option<&str>,
     mavlink_dialect: &str,
+    mission_path: Option<&Path>,
 ) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("build tokio runtime")?;
+
+    // Parse the mission spec up front so a typo fails on startup rather than
+    // on session close, hours later.
+    let mission_spec = match mission_path {
+        Some(path) => {
+            Some(load_mission_file(path).with_context(|| format!("load mission spec {path:?}"))?)
+        }
+        None => None,
+    };
+    if mission_spec.is_some() && mavlink_endpoint.is_none() {
+        warn!(
+            "--mission was supplied without --mavlink; the spec will be ignored because no MAVLink session is being ingested"
+        );
+    }
 
     let mavlink_config = match mavlink_endpoint {
         Some(endpoint) => {
@@ -108,10 +137,10 @@ fn run_serve(
                     "invalid --mavlink-dialect `{mavlink_dialect}` (expected one of: common, ardupilotmega, px4)"
                 )
             })?;
-            Some(
-                MavlinkConfig::new(endpoint, dialect)
-                    .with_context(|| format!("parse --mavlink endpoint `{endpoint}`"))?,
-            )
+            let mut config = MavlinkConfig::new(endpoint, dialect)
+                .with_context(|| format!("parse --mavlink endpoint `{endpoint}`"))?;
+            config.mission = mission_spec;
+            Some(config)
         }
         None => None,
     };

@@ -12,7 +12,7 @@
 
 #![allow(missing_docs)]
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use flighttrace_core::{
     AssertionOutcome, AssertionResult, Evidence, FailureReason, FailureReport, MissionPhase,
@@ -178,6 +178,25 @@ pub struct AssertionResultDto {
     pub outcome: AssertionOutcomeDto,
     pub detail: String,
     pub evaluated_at: Timestamp,
+}
+
+/// Request body for `POST /api/runs/:id/reevaluate`. Both fields are
+/// optional; an empty body is equivalent to `{}` and means "use the run's
+/// tagged mission file".
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReevaluateBody {
+    /// Filesystem path to the mission YAML to evaluate against. Overrides the
+    /// run's tagged mission.
+    pub mission_path: Option<String>,
+}
+
+/// Response body for `POST /api/runs/:id/reevaluate`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReevaluateResponse {
+    pub assertions: Vec<AssertionResultDto>,
+    pub failure_report: Option<FailureReportDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]

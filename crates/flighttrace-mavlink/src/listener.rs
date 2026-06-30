@@ -17,11 +17,15 @@ use tokio::time::{Interval, MissedTickBehavior, interval};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use flighttrace_assertions::{EvaluationInput, MissionSpec, evaluate};
 use flighttrace_core::{
     EventId, MissionPhase, MissionRun, MissionRunId, MissionSource, MissionStatus, NormalizedEvent,
     NormalizedEventKind, PhaseTransition, TelemetrySample, Timestamp,
 };
-use flighttrace_storage::{MissionRunRepo, NormalizedEventRepo, TelemetrySampleRepo};
+use flighttrace_storage::{
+    AssertionResultRepo, FailureReportRepo, MissionRunRepo, NormalizedEventRepo,
+    TelemetrySampleRepo,
+};
 
 use mavlink::dialects::common::MavMessage;
 
@@ -88,7 +92,7 @@ pub async fn run_ingestion(
                     if should_close_for_idle(active, &config) {
                         info!(run = %active.run_id, "MAVLink session idle timeout; closing");
                         let active = session.take().expect("session must be Some here");
-                        close_session(active, &pool).await?;
+                        close_session(active, &pool, config.mission.as_ref()).await?;
                     }
                 }
             }
@@ -110,7 +114,7 @@ pub async fn run_ingestion(
     }
 
     if let Some(active) = session.take() {
-        close_session(active, &pool).await?;
+        close_session(active, &pool, config.mission.as_ref()).await?;
     }
     info!("MAVLink ingestion stopped");
     Ok(())
@@ -254,23 +258,90 @@ fn should_close_for_idle(active: &ActiveSession, config: &MavlinkConfig) -> bool
     Instant::now().saturating_duration_since(last) > config.session_idle_timeout
 }
 
-async fn close_session(active: ActiveSession, pool: &SqlitePool) -> MavlinkIngestResult<()> {
+async fn close_session(
+    active: ActiveSession,
+    pool: &SqlitePool,
+    mission: Option<&MissionSpec>,
+) -> MavlinkIngestResult<()> {
     let ended_at = Timestamp(time::OffsetDateTime::now_utc());
-    let (status, failure_reason) = if active.state.mission_failed {
-        // We don't carry a specific FailureReason at this stage — the
-        // MissionFailed event already recorded it. Mark the run Failed with
-        // no top-level reason; the UI surfaces the event detail.
-        (MissionStatus::Failed, None)
-    } else {
-        (MissionStatus::Succeeded, None)
+    let run_id = active.run_id;
+    let mission_failed = active.state.mission_failed;
+
+    // Without a mission spec we keep the issue-4 behaviour: classify purely
+    // from the in-band MissionFailed flag.
+    let Some(mission) = mission else {
+        let (status, failure_reason) = if mission_failed {
+            (MissionStatus::Failed, None)
+        } else {
+            (MissionStatus::Succeeded, None)
+        };
+        finish_run(pool, run_id, status, failure_reason, ended_at).await?;
+        return Ok(());
     };
+
+    // First write the headline `ended_at` so the engine sees a closed window.
+    MissionRunRepo::new(pool)
+        .update_status(run_id, MissionStatus::Running, None, Some(ended_at))
+        .await?;
+
+    let run = match MissionRunRepo::new(pool).get(run_id).await? {
+        Some(run) => run,
+        None => {
+            warn!(run = %run_id, "session close: run row missing");
+            return Ok(());
+        }
+    };
+    let events = NormalizedEventRepo::new(pool).list_for_run(run_id).await?;
+    let samples = TelemetrySampleRepo::new(pool).list_for_run(run_id).await?;
+
+    let output = evaluate(
+        mission,
+        &EvaluationInput {
+            run: &run,
+            events: &events,
+            samples: &samples,
+        },
+    );
+
+    AssertionResultRepo::new(pool)
+        .replace_for_run(run_id, &output.results)
+        .await?;
+
+    let failure_repo = FailureReportRepo::new(pool);
+    let (status, failure_reason) = match output.failure_report.as_ref() {
+        Some(report) => {
+            failure_repo.upsert_for_run(report).await?;
+            (MissionStatus::Failed, Some(report.reason))
+        }
+        None => {
+            failure_repo.delete_for_run(run_id).await?;
+            if mission_failed {
+                // Engine cleared the run but the vehicle still signalled
+                // failure in-band; trust the vehicle and keep the run Failed.
+                (MissionStatus::Failed, None)
+            } else {
+                (MissionStatus::Succeeded, None)
+            }
+        }
+    };
+    finish_run(pool, run_id, status, failure_reason, ended_at).await?;
+    Ok(())
+}
+
+async fn finish_run(
+    pool: &SqlitePool,
+    run_id: MissionRunId,
+    status: MissionStatus,
+    failure_reason: Option<flighttrace_core::FailureReason>,
+    ended_at: Timestamp,
+) -> MavlinkIngestResult<()> {
     let updated = MissionRunRepo::new(pool)
-        .update_status(active.run_id, status, failure_reason, Some(ended_at))
+        .update_status(run_id, status, failure_reason, Some(ended_at))
         .await?;
     if !updated {
-        warn!(run = %active.run_id, "session close: run row missing");
+        warn!(run = %run_id, "session close: run row missing");
     } else {
-        info!(run = %active.run_id, ?status, "MAVLink session closed");
+        info!(run = %run_id, ?status, "MAVLink session closed");
     }
     Ok(())
 }
@@ -396,7 +467,7 @@ mod tests {
         .unwrap();
         let active = session.take().unwrap();
         let run_id = active.run_id;
-        close_session(active, &pool).await.unwrap();
+        close_session(active, &pool, None).await.unwrap();
 
         let run = MissionRunRepo::new(&pool)
             .get(run_id)
@@ -430,7 +501,7 @@ mod tests {
 
         let active = session.take().unwrap();
         let run_id = active.run_id;
-        close_session(active, &pool).await.unwrap();
+        close_session(active, &pool, None).await.unwrap();
         let run = MissionRunRepo::new(&pool)
             .get(run_id)
             .await
@@ -486,6 +557,113 @@ mod tests {
         assert!((samples[0].vertical_speed_mps - 1.0).abs() < 1e-6);
         assert_eq!(samples[0].mode, "GUIDED");
         assert!(samples[0].armed);
+    }
+
+    #[tokio::test]
+    async fn close_session_with_mission_writes_assertions_and_succeeds_for_clean_flight() {
+        use flighttrace_assertions::parse_mission_yaml;
+        use flighttrace_storage::{AssertionResultRepo, FailureReportRepo};
+
+        let pool = connect_in_memory().await.unwrap();
+        let cfg = cfg();
+        let mut session: Option<ActiveSession> = None;
+        on_message(
+            MavMessage::HEARTBEAT(heartbeat(true, 4)),
+            &pool,
+            &cfg,
+            &mut session,
+        )
+        .await
+        .unwrap();
+        let active = session.take().unwrap();
+        let run_id = active.run_id;
+
+        // A minimal spec that this synthetic session trivially satisfies: a
+        // single heartbeat keeps the heartbeat check within budget.
+        let spec = parse_mission_yaml(
+            "mission: live\nvehicle: any\nsteps:\n  - name: warmup\n    expect:\n      heartbeat_within_sec: 60\n",
+        )
+        .unwrap();
+        close_session(active, &pool, Some(&spec)).await.unwrap();
+
+        let run = MissionRunRepo::new(&pool)
+            .get(run_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.status, MissionStatus::Succeeded);
+        assert!(run.ended_at.is_some());
+
+        let results = AssertionResultRepo::new(&pool)
+            .list_for_run(run_id)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1, "one check, one result");
+        assert_eq!(results[0].outcome, flighttrace_core::AssertionOutcome::Pass);
+
+        let report = FailureReportRepo::new(&pool)
+            .get_for_run(run_id)
+            .await
+            .unwrap();
+        assert!(report.is_none(), "no failure → no report");
+    }
+
+    #[tokio::test]
+    async fn close_session_with_mission_records_failure_report_when_check_fails() {
+        use flighttrace_assertions::parse_mission_yaml;
+        use flighttrace_storage::{AssertionResultRepo, FailureReportRepo};
+
+        let pool = connect_in_memory().await.unwrap();
+        let cfg = cfg();
+        let mut session: Option<ActiveSession> = None;
+        on_message(
+            MavMessage::HEARTBEAT(heartbeat(true, 4)),
+            &pool,
+            &cfg,
+            &mut session,
+        )
+        .await
+        .unwrap();
+        let active = session.take().unwrap();
+        let run_id = active.run_id;
+
+        // Demand altitude ≥ 10m within 1s — the synthetic session has no
+        // altitude data, so the check fails and the engine writes a
+        // TAKEOFF_TIMEOUT failure report.
+        let spec = parse_mission_yaml(
+            "mission: live\nvehicle: any\nsteps:\n  - name: takeoff\n    expect:\n      altitude_at_least_m: 10\n      within_sec: 1\n",
+        )
+        .unwrap();
+        close_session(active, &pool, Some(&spec)).await.unwrap();
+
+        let run = MissionRunRepo::new(&pool)
+            .get(run_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.status, MissionStatus::Failed);
+        assert_eq!(
+            run.failure_reason,
+            Some(flighttrace_core::FailureReason::TakeoffTimeout)
+        );
+
+        let results = AssertionResultRepo::new(&pool)
+            .list_for_run(run_id)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].outcome, flighttrace_core::AssertionOutcome::Fail);
+
+        let report = FailureReportRepo::new(&pool)
+            .get_for_run(run_id)
+            .await
+            .unwrap()
+            .expect("failure report persisted");
+        assert_eq!(
+            report.reason,
+            flighttrace_core::FailureReason::TakeoffTimeout
+        );
+        assert_eq!(report.summary, "Mission failed: TAKEOFF_TIMEOUT");
     }
 
     #[tokio::test]

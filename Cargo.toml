@@ -6,6 +6,7 @@ members = [
     "crates/flighttrace-storage",
     "crates/flighttrace-api",
     "crates/flighttrace-mavlink",
+    "crates/flighttrace-assertions",
     "crates/flighttrace-cli",
 ]
 
@@ -18,7 +19,8 @@ publish = false
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["serde", "v4"] }
+serde_yaml = "0.9"
+uuid = { version = "1", features = ["serde", "v4", "v5"] }
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 thiserror = "1"
 clap = { version = "4", features = ["derive"] }
@@ -54,3 +56,4 @@ flighttrace-demo = { path = "crates/flighttrace-demo" }
 flighttrace-storage = { path = "crates/flighttrace-storage" }
 flighttrace-api = { path = "crates/flighttrace-api" }
 flighttrace-mavlink = { path = "crates/flighttrace-mavlink" }
+flighttrace-assertions = { path = "crates/flighttrace-assertions" }

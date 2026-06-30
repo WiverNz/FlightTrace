@@ -139,14 +139,58 @@ docs/
 
 ## Acceptance criteria
 
-- [ ] `flighttrace-assertions` crate compiles and exposes the documented public API.
-- [ ] `examples/missions/simple_takeoff.yaml` exists and matches the schema.
-- [ ] The demo run's assertion results and failure report are produced by `flighttrace-assertions`, not hard-coded.
-- [ ] The demo run still ends in `failed` with reason `TAKEOFF_TIMEOUT` and an evidence list and likely-cause paragraph consistent with the PRD.
-- [ ] At least the five v0.1 checks are implemented (`heartbeat_within_sec`, `armed`, `altitude_at_least_m`, `mode_not_changes`, `no_telemetry_gap_longer_than_sec`).
-- [ ] MAVLink sessions, on close, run the engine when a mission spec is configured and persist results.
-- [ ] `POST /api/runs/:id/reevaluate` returns updated assertion results and failure report.
-- [ ] `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass.
+- [x] `flighttrace-assertions` crate compiles and exposes the documented public API.
+- [x] `examples/missions/simple_takeoff.yaml` exists and matches the schema.
+- [x] The demo run's assertion results and failure report are produced by `flighttrace-assertions`, not hard-coded.
+- [x] The demo run still ends in `failed` with reason `TAKEOFF_TIMEOUT` and an evidence list and likely-cause paragraph consistent with the PRD.
+- [x] At least the five v0.1 checks are implemented (`heartbeat_within_sec`, `armed`, `altitude_at_least_m`, `mode_not_changes`, `no_telemetry_gap_longer_than_sec`).
+- [x] MAVLink sessions, on close, run the engine when a mission spec is configured and persist results.
+- [x] `POST /api/runs/:id/reevaluate` returns updated assertion results and failure report.
+- [x] `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass.
+
+## Implementation notes (delivered)
+
+- Public surface in `flighttrace_assertions`: `parse_mission_yaml`, `load_mission_file`,
+  `evaluate`, `MissionSpec`/`StepSpec`/`ExpectSpec`, `EvaluationInput`/`EvaluationOutput`,
+  `AssertionError`, plus the helpers `CheckKind`, `assertion_id_for`, `report_id_for`,
+  `reason_for_failure`, `likely_cause_for`.
+- Assertion + failure-report IDs are derived deterministically with UUID v5 over a
+  crate-local namespace, so the demo bundle's JSON output stays byte-identical across
+  calls (the existing `generator_is_deterministic` test catches regressions).
+- Assertion names follow `{step_name}.{check_kind}` (e.g. `takeoff.altitude_at_least_m`).
+- Storage: `AssertionResultRepo::replace_for_run` does DELETE + INSERT in one transaction;
+  `FailureReportRepo::upsert_for_run` does the same for the `UNIQUE(run_id)` failure report;
+  `FailureReportRepo::delete_for_run` returns a bool so callers can tell if a row was removed.
+- API: `POST /api/runs/:id/reevaluate` accepts an optional `{ "missionPath": "..." }`
+  body. When omitted, falls back to `examples/missions/{run.mission}.yaml`. The handler
+  writes assertions, upserts/deletes the failure report, and updates the run's
+  `status`/`failure_reason`/`ended_at`. Still-running runs (no `ended_at`) are not flipped
+  to `Succeeded` when no failure is found.
+- CLI: `serve --mission <path>` parses the spec up-front so a bad path or invalid YAML
+  fails fast at startup, not on the first session close. When `--mission` is supplied
+  without `--mavlink`, the CLI logs a warning and proceeds.
+- MAVLink: `close_session` writes the run's `ended_at` first so the engine sees a closed
+  window, then runs the engine, replaces assertion results, upserts/deletes the failure
+  report, and finally writes the headline status. When the in-band `MissionFailed` flag is
+  set but the engine cleared the run, we keep the run `Failed` (trust the vehicle) with
+  no top-level reason.
+
+## Verification
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --workspace`: 103 passing tests across all crates.
+- `web/`: `npm run build` and `npm run lint` both succeed.
+- Manual smoke against the CLI (`serve` + `POST /api/demo/run` + `POST /api/runs/:id/reevaluate`):
+  round-trip returns `TAKEOFF_TIMEOUT`, body-omitted fallback resolves
+  `examples/missions/simple_takeoff.yaml`, unknown id returns 404, non-YAML body returns 400.
+
+## Deviations
+
+- The mission-path fallback uses `examples/missions/{run.mission}.yaml` relative to the
+  process's working directory. The integration tests pass an absolute path via
+  `missionPath`; the fallback is verified by the manual smoke above. Real deployments are
+  expected to run from the workspace root.
 
 ## Tests required
 
