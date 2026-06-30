@@ -37,6 +37,13 @@ export function formatDurationMs(ms: number): string {
   return `${seconds}.${millis.toString().padStart(3, '0')}s`;
 }
 
+export function formatRelativeTime(iso: string, originIso: string): string {
+  const delta = Date.parse(iso) - Date.parse(originIso);
+  return Number.isFinite(delta) && delta >= 0
+    ? `+${formatDurationMs(delta)}`
+    : '—';
+}
+
 export function shortId(id: string): string {
   return id.length > 8 ? id.slice(0, 8) : id;
 }

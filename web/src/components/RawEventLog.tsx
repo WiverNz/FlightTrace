@@ -17,9 +17,12 @@ export function RawEventLog({ events }: Props) {
   }, [events, filter]);
 
   return (
-    <section className="section">
-      <header className="section-header">
-        <h2>Raw event log ({events.length})</h2>
+    <details className="section raw-event-section">
+      <summary className="section-header raw-event-summary">
+        <h2>Raw event log</h2>
+        <span className="muted">{events.length} events · expand</span>
+      </summary>
+      <div className="section-body flush">
         <div className="raw-event-controls">
           <input
             type="text"
@@ -30,8 +33,6 @@ export function RawEventLog({ events }: Props) {
           />
           <span className="muted">{filtered.length} match</span>
         </div>
-      </header>
-      <div className="section-body flush">
         <div className="raw-event-wrap">
           <table className="data">
             <thead>
@@ -60,7 +61,7 @@ export function RawEventLog({ events }: Props) {
           )}
         </div>
       </div>
-    </section>
+    </details>
   );
 }
 

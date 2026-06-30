@@ -19,6 +19,7 @@ import type {
 
 import { StatusBadge } from '../components/StatusBadge';
 import { FailureReportCard } from '../components/FailureReportCard';
+import { FailureSummary } from '../components/FailureSummary';
 import { MissionTimeline } from '../components/MissionTimeline';
 import { AssertionTable } from '../components/AssertionTable';
 import { TelemetryOverview } from '../components/TelemetryOverview';
@@ -165,7 +166,22 @@ export function RunDetailPage() {
           <ErrorState error={run.error} context="failed to load run" />
         )}
 
-      {report.data && <FailureReportCard report={report.data} />}
+      {report.data && (
+        <>
+          <FailureSummary
+            report={report.data}
+            run={run.data}
+            assertions={assertions.data}
+            telemetry={telemetry.data}
+            events={events.data}
+          />
+          <FailureReportCard
+            report={report.data}
+            events={events.data ?? []}
+            startedAt={run.data?.startedAt ?? null}
+          />
+        </>
+      )}
       {report.error != null && (
         <ErrorState error={report.error} context="failed to load report" />
       )}
@@ -179,7 +195,10 @@ export function RunDetailPage() {
         </header>
         <div className="section-body flush">
           {run.data ? (
-            <MissionTimeline phases={run.data.phases} />
+            <MissionTimeline
+              phases={run.data.phases}
+              startedAt={run.data.startedAt}
+            />
           ) : (
             <LoadingState label="loading timeline…" />
           )}
