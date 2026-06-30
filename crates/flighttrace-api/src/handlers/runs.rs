@@ -8,9 +8,12 @@ use uuid::Uuid;
 use flighttrace_core::MissionRunId;
 use flighttrace_storage::{
     AssertionResultRepo, FailureReportRepo, MissionRunRepo, NormalizedEventRepo,
+    TelemetrySampleRepo,
 };
 
-use crate::dto::{AssertionResultDto, FailureReportDto, MissionRunDto, NormalizedEventDto};
+use crate::dto::{
+    AssertionResultDto, FailureReportDto, MissionRunDto, NormalizedEventDto, TelemetrySampleDto,
+};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
@@ -81,6 +84,21 @@ pub async fn assertions(
         .await?;
     Ok(Json(
         results.into_iter().map(AssertionResultDto::from).collect(),
+    ))
+}
+
+/// `GET /api/runs/:id/telemetry` — list telemetry samples for a run.
+pub async fn telemetry(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Vec<TelemetrySampleDto>>> {
+    let id = MissionRunId::new(id);
+    ensure_run_exists(&state, id).await?;
+    let samples = TelemetrySampleRepo::new(state.pool())
+        .list_for_run(id)
+        .await?;
+    Ok(Json(
+        samples.into_iter().map(TelemetrySampleDto::from).collect(),
     ))
 }
 

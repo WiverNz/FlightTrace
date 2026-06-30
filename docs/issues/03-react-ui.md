@@ -130,17 +130,17 @@ web/
 
 ## Acceptance criteria
 
-- [ ] `web/` is a working Vite + React + TypeScript app.
-- [ ] `npm run dev` starts the dev server on port 5173 and renders the runs list.
-- [ ] Clicking **Create demo failed run** calls `POST /api/demo/run`, then navigates to the new run's detail page.
-- [ ] Runs list shows the new run with status `FAILED` and reason `TAKEOFF_TIMEOUT`.
-- [ ] Run detail page shows the failure report card, mission timeline, assertion table, telemetry overview, and raw event log — all populated from the API.
-- [ ] The failure report card displays the summary line, evidence list, and likely cause paragraph from issue 1's demo.
-- [ ] At least one assertion row is rendered with outcome `fail`.
-- [ ] Refreshing the page preserves all rendered data (no client-only state required for correctness).
-- [ ] `npm run build` succeeds with no TypeScript errors.
-- [ ] `npm run lint` succeeds.
-- [ ] The UI works without any backend mock — only the real Axum server from issue 2.
+- [x] `web/` is a working Vite + React + TypeScript app.
+- [x] `npm run dev` starts the dev server on port 5173 and renders the runs list.
+- [x] Clicking **Create demo failed run** calls `POST /api/demo/run`, then navigates to the new run's detail page.
+- [x] Runs list shows the new run with status `FAILED` and reason `TAKEOFF_TIMEOUT`.
+- [x] Run detail page shows the failure report card, mission timeline, assertion table, telemetry overview, and raw event log — all populated from the API.
+- [x] The failure report card displays the summary line, evidence list, and likely cause paragraph from issue 1's demo.
+- [x] At least one assertion row is rendered with outcome `fail`.
+- [x] Refreshing the page preserves all rendered data (no client-only state required for correctness).
+- [x] `npm run build` succeeds with no TypeScript errors.
+- [x] `npm run lint` succeeds.
+- [x] The UI works without any backend mock — only the real Axum server from issue 2.
 
 ## Tests required
 
@@ -164,3 +164,73 @@ web/
 - **Issue 5** (assertions) will add richer assertion metadata (which evidence each assertion cites). The `AssertionTable` should be ready to grow an expandable row.
 - **Issue 6** (docs) will add screenshots; keep the UI presentable so screenshots are not embarrassing.
 - Do not introduce a state-management library yet. If it becomes necessary in issue 4 or 5, propose it in that issue's PR.
+
+## Implementation notes
+
+- **Telemetry endpoint added to the API.** The spec's `TelemetryOverview`
+  requires `vertical_speed_mps`, which is not exposed by any normalized event.
+  Issue 2 documented `GET /api/runs/:id/telemetry` as a future endpoint; this
+  issue moved that ahead and wired up `runs::telemetry` + a matching HTTP
+  integration test (`telemetry_endpoint_returns_samples`). The DTO already
+  existed (`TelemetrySampleDto`), so the change is one handler, one route, one
+  test, and one TS client wrapper.
+- **TypeScript types are hand-written and match the wire format observed from
+  a live `serve`.** Enum casing was confirmed against the real responses
+  (`source: "DEMO"`, `status: "FAILED"`, `phase: "TAKEOFF_REQUESTED"`,
+  evidence/event `kind` tags in PascalCase, etc.). The `NormalizedEventDto` is
+  a discriminated union flattened with the envelope fields, matching the
+  serde `#[serde(flatten)]` shape on the server.
+- **API client is one place.** `import.meta.env.VITE_API_BASE_URL` is read only
+  in `src/api/client.ts`. Every wrapper in `src/api/runs.ts` goes through
+  `request<T>`, which parses the `{ error: { code, message } }` envelope and
+  throws a typed `ApiError` carrying `status` + `code`.
+- **Section-level loading + error states.** Each panel on the run detail page
+  owns its own `Loadable<T>` state. All five fetches kick off in parallel on
+  mount and render skeletons independently; one slow endpoint does not block
+  the others. A 404 on `/failure-report` is treated as "no report" (running /
+  successful runs), not as an error.
+- **Dark debugger aesthetic.** Single dark theme, slate/zinc palette, semantic
+  colors only for status. All IDs, timestamps, raw payloads, and metric values
+  use `ui-monospace`. Sections are bordered with sticky headers; tables have
+  hover rows and pinned headers. No design system, no Tailwind, ~310 lines of
+  hand-written CSS organized into `tokens.css` + `globals.css`.
+- **Routing.** `react-router-dom` v6 `createBrowserRouter` with two routes
+  (`/`, `/runs/:id`) and a `*` 404 fallback. The root `App` is the layout
+  shell; pages render into its `<Outlet/>`. No data routers / loaders — fetches
+  live in `useEffect` so they stay easy to swap for SSE later.
+- **ESLint config.** Vite's default flat config is in eslint 9; staying on
+  eslint 8 with a `.eslintrc.cjs` keeps the dependency footprint smaller and
+  avoids the flat-config migration churn. Rules: `eslint:recommended`,
+  `@typescript-eslint/recommended`, `react-hooks/recommended`, plus
+  `react-refresh/only-export-components`.
+
+## Manual verification
+
+Performed on 2026-06-30 against a fresh `./data/smoke.db`:
+
+1. `cargo run -p flighttrace-cli -- serve --database ./data/smoke.db --bind 127.0.0.1:8088`
+   started the API; CORS preflight from `Origin: http://localhost:5173`
+   returned 200 with the expected `access-control-allow-origin` header.
+2. `VITE_API_BASE_URL=http://127.0.0.1:8088 npm run dev` (in `web/`) started
+   Vite on port 5173; the index document served HTTP 200, and the deep
+   route `/runs/:id` also resolved to the SPA shell (200).
+3. `POST /api/demo/run` returned a fresh UUID; `GET /api/runs` listed the run
+   with `status: "FAILED"`, `failureReason: "TAKEOFF_TIMEOUT"`, and the
+   shifted-to-now timeline; `GET /api/runs/:id/failure-report` returned the
+   evidence list ("Vehicle armed successfully", "Target altitude was 10.0 m",
+   "Maximum reached altitude was only 2.4 m", EKF `Statustext`, etc.);
+   `GET /api/runs/:id/telemetry` returned 15 samples with `altitudeM`,
+   `verticalSpeedMps`, `mode: "GUIDED"`, `armed: true`, `batteryRemainingPct`.
+4. The wire-format field names match the hand-written TS types in
+   `src/types/api.ts` exactly.
+
+## Quality gates
+
+- `npm run build` (in `web/`) — clean (`tsc -b && vite build`, 51 modules,
+  ~224 KB JS / ~9 KB CSS).
+- `npm run lint` (in `web/`) — clean (eslint 8 with the rules above).
+- `cargo fmt --all -- --check` — clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+- `cargo test --workspace` — 37 tests pass
+  (`flighttrace-core` 13, `flighttrace-demo` 11, `flighttrace-storage` 5,
+  `flighttrace-api` 8 after adding the telemetry HTTP test).

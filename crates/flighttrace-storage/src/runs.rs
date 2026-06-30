@@ -189,4 +189,3 @@ async fn row_to_run_with_phases(pool: &SqlitePool, row: SqliteRow) -> StorageRes
         phases,
     })
 }
-

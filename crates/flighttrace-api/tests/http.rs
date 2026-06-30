@@ -139,6 +139,35 @@ async fn events_and_assertions_endpoints_return_arrays() {
 }
 
 #[tokio::test]
+async fn telemetry_endpoint_returns_samples() {
+    let router = test_router().await;
+    let create_req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/demo/run")
+        .body(Body::empty())
+        .unwrap();
+    let (_, body) = json_response(&router, create_req).await;
+    let id = body["id"].as_str().unwrap().to_string();
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/runs/{id}/telemetry"))
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = json_response(&router, req).await;
+    assert_eq!(status, StatusCode::OK);
+    let samples = body.as_array().expect("telemetry array");
+    assert!(!samples.is_empty(), "demo telemetry should be non-empty");
+    let first = &samples[0];
+    assert!(first["runId"].is_string());
+    assert!(first["altitudeM"].is_number());
+    assert!(first["verticalSpeedMps"].is_number());
+    assert!(first["mode"].is_string());
+    assert!(first["armed"].is_boolean());
+    assert!(first["batteryRemainingPct"].is_number());
+}
+
+#[tokio::test]
 async fn unknown_run_returns_404_with_error_envelope() {
     let router = test_router().await;
     let bogus = uuid::Uuid::new_v4();

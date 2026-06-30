@@ -29,6 +29,7 @@ pub fn build(state: AppState) -> Router {
         .route("/api/runs/:id", get(runs::get))
         .route("/api/runs/:id/events", get(runs::events))
         .route("/api/runs/:id/assertions", get(runs::assertions))
+        .route("/api/runs/:id/telemetry", get(runs::telemetry))
         .route("/api/runs/:id/failure-report", get(runs::failure_report))
         .route("/api/demo/run", post(demo::create))
         .layer(TraceLayer::new_for_http())
