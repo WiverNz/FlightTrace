@@ -1,5 +1,8 @@
 # FlightTrace
 
+[![CI](https://github.com/WiverNz/FlightTrace/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/WiverNz/FlightTrace/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 > A developer-first **mission debugger** that explains **why** autonomous
 > PX4/ArduPilot missions fail, with evidence.
 
@@ -373,6 +376,10 @@ container build is gated on the single-binary release packaging above.
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT License](LICENSE-MIT) at your option. (Workspace metadata declares
-`license = "MIT OR Apache-2.0"`; the license texts will be added alongside
-the first tagged release.)
+[MIT License](LICENSE-MIT) at your option. Workspace metadata declares
+`license = "MIT OR Apache-2.0"`.
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or
+conditions.
