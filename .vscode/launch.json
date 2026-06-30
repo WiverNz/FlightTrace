@@ -75,7 +75,7 @@
       "type": "chrome",
       "request": "launch",
       "name": "Web: Chrome against Vite",
-      "url": "http://localhost:5173",
+      "url": "http://127.0.0.1:5173/",
       "webRoot": "${workspaceFolder}/web",
       "sourceMaps": true,
       "preLaunchTask": "web: vite dev"
@@ -84,7 +84,7 @@
       "type": "msedge",
       "request": "launch",
       "name": "Web: Edge against Vite",
-      "url": "http://localhost:5173",
+      "url": "http://127.0.0.1:5173/",
       "webRoot": "${workspaceFolder}/web",
       "sourceMaps": true,
       "preLaunchTask": "web: vite dev"
