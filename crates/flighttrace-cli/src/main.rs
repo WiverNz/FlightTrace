@@ -5,6 +5,11 @@
 //! migrations, and starts the Axum API on the requested address. Pass
 //! `--mavlink udp://host:port` to additionally bind a read-only MAVLink UDP
 //! listener (issue 4) that persists live SITL traffic into the same database.
+//!
+//! Each `serve` flag also reads a matching `FLIGHTTRACE_*` environment
+//! variable as a fallback, so a `.env` file can drive local-dev configuration
+//! without retyping flags. Precedence is: CLI flag > env var > built-in
+//! default.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -40,26 +45,32 @@ enum Command {
     Demo,
     /// Start the FlightTrace HTTP API backed by a local SQLite database.
     Serve {
-        /// Address to bind the HTTP server to.
-        #[arg(long, default_value = "127.0.0.1:8080")]
+        /// Address to bind the HTTP server to. Env: `FLIGHTTRACE_BIND`.
+        #[arg(long, env = "FLIGHTTRACE_BIND", default_value = "127.0.0.1:8080")]
         bind: SocketAddr,
-        /// Path to the SQLite database file. Parent directory is created if missing.
-        #[arg(long, default_value = "./data/flighttrace.db")]
+        /// Path to the SQLite database file. Parent directory is created if
+        /// missing. Env: `FLIGHTTRACE_DATABASE`.
+        #[arg(
+            long,
+            env = "FLIGHTTRACE_DATABASE",
+            default_value = "./data/flighttrace.db"
+        )]
         database: PathBuf,
         /// Optional MAVLink UDP endpoint to ingest read-only telemetry from
         /// (e.g. `udp://127.0.0.1:14550`). Absent = demo-only mode, exactly
-        /// like before issue 4.
-        #[arg(long)]
+        /// like before issue 4. Env: `FLIGHTTRACE_MAVLINK`.
+        #[arg(long, env = "FLIGHTTRACE_MAVLINK")]
         mavlink: Option<String>,
         /// MAVLink dialect to decode incoming traffic with. PX4 also speaks
-        /// `common`, so the default is fine for both stacks.
-        #[arg(long, default_value = "common")]
+        /// `common`, so the default is fine for both stacks. Env:
+        /// `FLIGHTTRACE_MAVLINK_DIALECT`.
+        #[arg(long, env = "FLIGHTTRACE_MAVLINK_DIALECT", default_value = "common")]
         mavlink_dialect: String,
         /// Path to a mission YAML to evaluate against when each MAVLink
         /// session ends. Without it, ingestion still classifies sessions
         /// from the in-band `MissionFailed` flag but produces no
-        /// `FailureReport`.
-        #[arg(long)]
+        /// `FailureReport`. Env: `FLIGHTTRACE_MISSION`.
+        #[arg(long, env = "FLIGHTTRACE_MISSION")]
         mission: Option<PathBuf>,
     },
 }
@@ -269,4 +280,157 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
     info!("shutdown signal received");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    const CONFIG_ENV_VARS: [&str; 5] = [
+        "FLIGHTTRACE_BIND",
+        "FLIGHTTRACE_DATABASE",
+        "FLIGHTTRACE_MAVLINK",
+        "FLIGHTTRACE_MAVLINK_DIALECT",
+        "FLIGHTTRACE_MISSION",
+    ];
+    type ServeConfig = (SocketAddr, PathBuf, Option<String>, String, Option<PathBuf>);
+
+    struct EnvGuard {
+        values: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn cleared() -> Self {
+            let values = CONFIG_ENV_VARS
+                .into_iter()
+                .map(|name| (name, std::env::var_os(name)))
+                .collect();
+            for name in CONFIG_ENV_VARS {
+                // SAFETY: all tests in this module serialize environment
+                // mutation with ENV_LOCK and restore it before releasing it.
+                unsafe { std::env::remove_var(name) };
+            }
+            Self { values }
+        }
+
+        fn set(&self, name: &'static str, value: &str) {
+            assert!(CONFIG_ENV_VARS.contains(&name));
+            // SAFETY: all tests in this module serialize environment mutation
+            // with ENV_LOCK and restore it before releasing it.
+            unsafe { std::env::set_var(name, value) };
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in &self.values {
+                // SAFETY: the ENV_LOCK guard still exists while this guard is
+                // dropped, so no test in this module can observe this restore.
+                unsafe {
+                    match value {
+                        Some(value) => std::env::set_var(name, value),
+                        None => std::env::remove_var(name),
+                    }
+                }
+            }
+        }
+    }
+
+    fn parse_serve(args: &[&str]) -> ServeConfig {
+        let cli = Cli::try_parse_from(args).expect("serve arguments should parse");
+        match cli.command {
+            Command::Serve {
+                bind,
+                database,
+                mavlink,
+                mavlink_dialect,
+                mission,
+            } => (bind, database, mavlink, mavlink_dialect, mission),
+            Command::Demo => panic!("expected serve command"),
+        }
+    }
+
+    #[test]
+    fn serve_uses_defaults_without_env_or_flags() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let _env = EnvGuard::cleared();
+
+        let config = parse_serve(&["flighttrace", "serve"]);
+
+        assert_eq!(config.0, "127.0.0.1:8080".parse().unwrap());
+        assert_eq!(config.1, PathBuf::from("./data/flighttrace.db"));
+        assert_eq!(config.2, None);
+        assert_eq!(config.3, "common");
+        assert_eq!(config.4, None);
+    }
+
+    #[test]
+    fn serve_uses_environment_when_flags_are_absent() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let env = EnvGuard::cleared();
+        env.set("FLIGHTTRACE_BIND", "127.0.0.1:8088");
+        env.set("FLIGHTTRACE_DATABASE", "./data/env.db");
+        env.set("FLIGHTTRACE_MAVLINK_DIALECT", "ardupilotmega");
+
+        let config = parse_serve(&["flighttrace", "serve"]);
+
+        assert_eq!(config.0, "127.0.0.1:8088".parse().unwrap());
+        assert_eq!(config.1, PathBuf::from("./data/env.db"));
+        assert_eq!(config.3, "ardupilotmega");
+    }
+
+    #[test]
+    fn serve_cli_flags_override_environment() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let env = EnvGuard::cleared();
+        env.set("FLIGHTTRACE_BIND", "127.0.0.1:8088");
+        env.set("FLIGHTTRACE_DATABASE", "./data/env.db");
+        env.set("FLIGHTTRACE_MAVLINK", "udp://127.0.0.1:14550");
+        env.set("FLIGHTTRACE_MAVLINK_DIALECT", "common");
+        env.set("FLIGHTTRACE_MISSION", "examples/missions/env.yaml");
+
+        let config = parse_serve(&[
+            "flighttrace",
+            "serve",
+            "--bind",
+            "127.0.0.1:8089",
+            "--database",
+            "./data/cli.db",
+            "--mavlink",
+            "udp://127.0.0.1:14560",
+            "--mavlink-dialect",
+            "px4",
+            "--mission",
+            "examples/missions/cli.yaml",
+        ]);
+
+        assert_eq!(config.0, "127.0.0.1:8089".parse().unwrap());
+        assert_eq!(config.1, PathBuf::from("./data/cli.db"));
+        assert_eq!(config.2.as_deref(), Some("udp://127.0.0.1:14560"));
+        assert_eq!(config.3, "px4");
+        assert_eq!(config.4, Some(PathBuf::from("examples/missions/cli.yaml")));
+    }
+
+    #[test]
+    fn serve_reads_optional_mavlink_and_mission_from_environment() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let env = EnvGuard::cleared();
+        env.set("FLIGHTTRACE_MAVLINK", "udp://127.0.0.1:14550");
+        env.set(
+            "FLIGHTTRACE_MISSION",
+            "examples/missions/simple_takeoff.yaml",
+        );
+
+        let config = parse_serve(&["flighttrace", "serve"]);
+
+        assert_eq!(config.2.as_deref(), Some("udp://127.0.0.1:14550"));
+        assert_eq!(
+            config.4,
+            Some(PathBuf::from("examples/missions/simple_takeoff.yaml"))
+        );
+    }
 }

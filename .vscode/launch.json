@@ -11,7 +11,7 @@
       },
       "args": ["demo"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "type": "lldb",
@@ -21,15 +21,9 @@
         "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
         "filter": { "name": "flighttrace", "kind": "bin" }
       },
-      "args": [
-        "serve",
-        "--bind",
-        "127.0.0.1:8080",
-        "--database",
-        "${workspaceFolder}/data/debug-flighttrace.db"
-      ],
+      "args": ["serve"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "type": "lldb",
@@ -41,17 +35,13 @@
       },
       "args": [
         "serve",
-        "--bind",
-        "127.0.0.1:8080",
-        "--database",
-        "${workspaceFolder}/data/debug-mavlink.db",
         "--mavlink",
         "udp://127.0.0.1:14550",
         "--mission",
         "${workspaceFolder}/examples/missions/simple_takeoff.yaml"
       ],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "type": "lldb",
@@ -63,7 +53,7 @@
       },
       "args": ["--nocapture"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "type": "lldb",
@@ -79,7 +69,7 @@
       },
       "args": ["${input:testFilter}", "--nocapture"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.vscode/flighttrace.env"
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "type": "chrome",

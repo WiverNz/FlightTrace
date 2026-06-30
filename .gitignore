@@ -15,8 +15,7 @@ Thumbs.db
 # Editor folders that aren't shared.
 .idea/
 
-# VS Code: track launch.json/tasks.json/*.example, ignore per-user env files.
-.vscode/flighttrace.env
+# VS Code: track launch.json/tasks.json, ignore per-user files.
 .vscode/*.local
 .vscode/settings.json
 

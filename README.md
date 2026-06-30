@@ -112,6 +112,41 @@ Then:
 
 The run is persisted in `./data/flighttrace.db` and survives restarts.
 
+### Local configuration
+
+Every `serve` option can also come from the environment. Resolution order is
+**CLI flag > environment variable > built-in default**:
+
+| Environment variable | CLI flag | Default |
+| --- | --- | --- |
+| `FLIGHTTRACE_BIND` | `--bind` | `127.0.0.1:8080` |
+| `FLIGHTTRACE_DATABASE` | `--database` | `./data/flighttrace.db` |
+| `FLIGHTTRACE_MAVLINK` | `--mavlink` | unset |
+| `FLIGHTTRACE_MAVLINK_DIALECT` | `--mavlink-dialect` | `common` |
+| `FLIGHTTRACE_MISSION` | `--mission` | unset |
+
+`RUST_LOG` controls tracing output and `RUST_BACKTRACE` has its normal Rust
+meaning. Copy the example and export it into the current shell before running
+the CLI (`clap` reads the environment; it does not load `.env` itself):
+
+```bash
+cp .env.example .env
+set -a
+source .env
+set +a
+cargo run -p flighttrace-cli -- serve
+```
+
+For example, `--bind 127.0.0.1:8089` overrides
+`FLIGHTTRACE_BIND=127.0.0.1:8088`. The root `.env` is gitignored, while
+`.env.example` is safe to commit.
+
+VS Code launch configurations read the same root `.env` file. Its example
+uses debug bind address `127.0.0.1:8088`, leaving the README quickstart on
+port `8080`. MAVLink and mission variables are commented out by default, so
+the `CLI: serve demo-only` profile remains demo-only; the MAVLink profile
+supplies them as CLI flags.
+
 ## Quickstart — ArduPilot SITL
 
 ArduPilot's `sim_vehicle.py` already publishes MAVLink; add a `--out` line so
@@ -324,9 +359,11 @@ keeps the directory in git). To produce a fresh set:
 
 ## Troubleshooting
 
-- **Port 8080 already in use.** Pass `--bind 127.0.0.1:<free port>` to
-  `flighttrace serve`. Update `web/.env.development`'s `VITE_API_BASE_URL` to
-  match.
+- **Port 8080 already in use (`Address already in use`).** Find the listener
+  with `lsof -i :8080` or `ss -ltnp | grep 8080`, then stop it if it is safe
+  to do so. Alternatively set `FLIGHTTRACE_BIND=127.0.0.1:8088` or pass
+  `--bind 127.0.0.1:8088`. Update `web/.env.development`'s
+  `VITE_API_BASE_URL` to match.
 - **Port 5173 already in use.** Vite will offer the next port and print it.
   If you pin a custom port, update the CORS allowlist in
   `crates/flighttrace-api/src/router.rs` (`DEFAULT_CORS_ORIGIN`) and rebuild.
