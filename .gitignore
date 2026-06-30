@@ -2,3 +2,16 @@
 /data
 /web/node_modules
 /web/dist
+
+# Local env overrides (Vite, etc.).
+.env
+.env.*.local
+.env.local
+
+# OS junk.
+.DS_Store
+Thumbs.db
+
+# Editor folders that aren't shared.
+.idea/
+.vscode/

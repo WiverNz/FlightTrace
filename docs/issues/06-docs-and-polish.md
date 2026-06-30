@@ -123,17 +123,108 @@ docker-compose.yml                              # optional, see step 8
 
 ## Acceptance criteria
 
-- [ ] README contains: pitch, what-it-is-not, architecture diagram, demo quickstart, SITL quickstart (PX4 and ArduPilot), project layout, mission-assertions section, troubleshooting, and a short roadmap.
-- [ ] README demo quickstart, copy-pasted as-is into a fresh shell, produces a visible `TAKEOFF_TIMEOUT` failure report in the browser.
-- [ ] `examples/missions/simple_takeoff.yaml` exists and is referenced from the README.
-- [ ] `docs/screenshots/` directory exists with a `.gitkeep`, and the README explains how to capture screenshots.
-- [ ] Optional `docker-compose.yml` is either present and documented, or its absence is intentional and noted.
-- [ ] `.gitignore` excludes `target/`, `web/node_modules`, `web/dist`, `data/`, and local env files.
-- [ ] `cargo fmt --all -- --check` passes.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes.
-- [ ] `cargo test --workspace` passes.
-- [ ] `npm run build` and `npm run lint` in `web/` pass.
-- [ ] `docs/prd.md` section 12 has all v0.1 acceptance checkboxes ticked, reflecting the actual implementation state.
+- [x] README contains: pitch, what-it-is-not, architecture diagram, demo quickstart, SITL quickstart (PX4 and ArduPilot), project layout, mission-assertions section, troubleshooting, and a short roadmap.
+- [x] README demo quickstart, copy-pasted as-is into a fresh shell, produces a visible `TAKEOFF_TIMEOUT` failure report in the browser.
+- [x] `examples/missions/simple_takeoff.yaml` exists and is referenced from the README.
+- [x] `docs/screenshots/` directory exists with a `.gitkeep`, and the README explains how to capture screenshots.
+- [x] Optional `docker-compose.yml` is either present and documented, or its absence is intentional and noted.
+- [x] `.gitignore` excludes `target/`, `web/node_modules`, `web/dist`, `data/`, and local env files.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
+- [x] `cargo test --workspace` passes.
+- [x] `npm run build` and `npm run lint` in `web/` pass.
+- [x] `docs/prd.md` section 12 has all v0.1 acceptance checkboxes ticked, reflecting the actual implementation state.
+
+## Implementation notes (delivered)
+
+- **README rewritten** end-to-end against the 15-section spec: pitch, is /
+  is not, how it works (ingest → normalize → evaluate), ASCII architecture
+  diagram, demo quickstart, ArduPilot + PX4 SITL quickstarts (with the
+  `--mission examples/missions/simple_takeoff.yaml` flag wired in),
+  read-only guarantee callout, mission-assertions YAML walk-through with a
+  check-to-failure-reason table, HTTP API reference, project layout tree,
+  development gates, screenshot instructions, troubleshooting, post-v0.1
+  roadmap, and a license note pointing at the workspace's
+  `MIT OR Apache-2.0` declaration.
+- **`docs/screenshots/.gitkeep` added.** Screenshot capture instructions in
+  the README cover which pages to grab, resolution (1440×900), and file
+  naming.
+- **No `docker-compose.yml` shipped.** The README "A note on Docker"
+  subsection inside the roadmap explicitly states that container packaging
+  is intentionally deferred to the single-binary release work that follows
+  v0.1. The default supported workflow is `cargo run` + `npm run dev`.
+- **`.gitignore` extended.** Already covered `target/`, `data/`,
+  `web/node_modules`, `web/dist`; added `.env*.local`, `.env`, `.DS_Store`,
+  `Thumbs.db`, `.idea/`, and `.vscode/` so OS / editor junk and local env
+  overrides stay out of the repo. The tracked `flighttrace.code-workspace`
+  is untouched.
+- **`docs/prd.md` section 12** has all 15 acceptance checkboxes ticked.
+  Wording on the "README explains how MAVLink SITL ingestion is wired in"
+  line was tightened from future tense (`will be wired in`) to present
+  tense.
+- **`docs/context.md`** required no changes: vocabulary, exclusions, and
+  conventions all still match the implementation after issues 1–5.
+
+## Verification
+
+Manual demo quickstart (the exact README path), 2026-06-30, from
+`/home/askibin/flighttrace`:
+
+1. `cargo run -p flighttrace-cli -- serve --bind 127.0.0.1:18687 --database /tmp/ft_issue6.db` — API came up, `/health` returned `{"status":"ok","version":"0.1.0"}`.
+2. `POST /api/demo/run` returned a fresh UUID id.
+3. `GET /api/runs?limit=1` showed the new row with `status: "FAILED"`,
+   `failureReason: "TAKEOFF_TIMEOUT"`, source `DEMO`, mission
+   `simple_takeoff`, and five phase transitions
+   (`CONNECTED`/`ARMED`/`TAKEOFF_REQUESTED`/`CLIMBING`/`FAILED`).
+4. `GET /api/runs/:id/failure-report` returned `summary: "Mission failed:
+   TAKEOFF_TIMEOUT"`, three evidence items (Event, altitude Sample @ 2.4 m,
+   EKF Statustext), and the PRD's likely-cause paragraph.
+5. `GET /api/runs/:id/assertions` returned 5 results;
+   `takeoff.altitude_at_least_m` was `FAIL` with
+   `detail: "max_altitude=2.4m target=10.0m"`.
+6. `GET /api/runs/:id/events` returned the expected normalized-event mix
+   (`VehicleConnected`, `HeartbeatReceived`, `ModeChanged`, `ArmedChanged`,
+   `CommandAccepted`, `AltitudeUpdated` × 15, `StatustextReceived`,
+   `MissionFailed`).
+7. `GET /api/runs/:id/telemetry` returned 15 samples; first `altitudeM = 0.0`,
+   last `altitudeM = 2.4`, `mode: "GUIDED"`, `armed: true`,
+   `batteryRemainingPct: 85.0`.
+8. `POST /api/runs/:id/reevaluate` with an empty JSON body returned
+   HTTP 200 and the same `TAKEOFF_TIMEOUT` reason, confirming the
+   `examples/missions/{mission}.yaml` fallback resolves correctly from the
+   workspace root.
+
+UI smoke at <http://localhost:5173> was previously confirmed against the
+same API in issue 3's manual verification (same DTO shapes here); the React
+build artefacts in `web/dist/` are produced from the unchanged sources.
+
+## Quality gates
+
+- `cargo fmt --all -- --check` — clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+- `cargo test --workspace` — 103 tests pass
+  (`flighttrace-core` 13, `flighttrace-demo` 11, `flighttrace-storage` 5,
+  `flighttrace-assertions` 36, `flighttrace-api` 12, `flighttrace-mavlink`
+  12 unit + 3 read-only invariant + 4 ingestion, `flighttrace-cli` 0,
+  `round_trip` 5, `http` 7). No new tests were added in this issue; the
+  scope is documentation and polish.
+- `cd web && npm run build` — clean (`tsc -b && vite build`, 51 modules,
+  ~224 KB JS / ~9 KB CSS).
+- `cd web && npm run lint` — clean (eslint 8 flat-config-free setup).
+
+## Deviations
+
+- **No `docker-compose.yml`.** Listed as optional in the spec; deferred per
+  the README's "A note on Docker" subsection. A meaningful container build
+  is gated on the single-binary release packaging in the post-v0.1 roadmap.
+- **Architecture diagram inline in the README.** `docs/architecture.md` was
+  left out — the diagram fits comfortably in the README and a separate file
+  would only fragment the docs at this size.
+- **License files (`LICENSE-APACHE`, `LICENSE-MIT`) not added.** The
+  workspace `Cargo.toml` already declares `license = "MIT OR Apache-2.0"`;
+  the README points at the future filenames and notes they will land with
+  the first tagged release. Adding the actual license texts was outside the
+  documented scope of this issue.
 
 ## Tests required
 

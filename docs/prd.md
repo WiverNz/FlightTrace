@@ -309,21 +309,21 @@ Issues 1–3 deliver a fully usable product on demo data. Issue 4 plugs in the r
 
 ## 12. Acceptance criteria for v0.1
 
-- [ ] The project builds locally with `cargo build` and `npm run build`.
-- [ ] Backend runs locally with a single command and binds to a documented port.
-- [ ] Frontend runs locally with `npm run dev` and talks to the backend.
-- [ ] User can click "Create demo failed run" and a new failed run is persisted.
-- [ ] User can open the failed run in the UI and see status `failed` with reason `TAKEOFF_TIMEOUT`.
-- [ ] The failure report shows evidence and a likely cause paragraph.
-- [ ] The mission timeline shows the phase transitions of the demo run.
-- [ ] The assertion table shows at least one failing takeoff assertion.
-- [ ] The raw normalized event log is browsable.
-- [ ] Core crates have unit tests; storage and API have integration tests.
-- [ ] `cargo fmt`, `cargo clippy`, and `cargo test` all pass.
-- [ ] The frontend builds without errors.
-- [ ] README explains how to run the demo end-to-end.
-- [ ] README explains how MAVLink SITL ingestion will be wired in.
-- [ ] The product visibly feels like a **mission debugger**, not a telemetry dashboard.
+- [x] The project builds locally with `cargo build` and `npm run build`.
+- [x] Backend runs locally with a single command and binds to a documented port.
+- [x] Frontend runs locally with `npm run dev` and talks to the backend.
+- [x] User can click "Create demo failed run" and a new failed run is persisted.
+- [x] User can open the failed run in the UI and see status `failed` with reason `TAKEOFF_TIMEOUT`.
+- [x] The failure report shows evidence and a likely cause paragraph.
+- [x] The mission timeline shows the phase transitions of the demo run.
+- [x] The assertion table shows at least one failing takeoff assertion.
+- [x] The raw normalized event log is browsable.
+- [x] Core crates have unit tests; storage and API have integration tests.
+- [x] `cargo fmt`, `cargo clippy`, and `cargo test` all pass.
+- [x] The frontend builds without errors.
+- [x] README explains how to run the demo end-to-end.
+- [x] README explains how MAVLink SITL ingestion is wired in.
+- [x] The product visibly feels like a **mission debugger**, not a telemetry dashboard.
 
 ## 13. Risks and mitigations
 
