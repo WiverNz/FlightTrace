@@ -25,6 +25,7 @@
 #   5. Runs cargo check --workspace so Cargo.lock catches up.
 #   6. Shows the diff and creates one "Release vX.Y.Z" commit.
 #   7. Creates annotated tag vX.Y.Z and optionally pushes it.
+#   8. A pushed tag triggers CI to build and publish the GitHub Release.
 
 set -euo pipefail
 
@@ -45,7 +46,7 @@ assume_yes=0
 no_sign=0
 do_push=0
 
-usage() { sed -n '2,27{s/^# \{0,1\}//;p;}' "$0"; }
+usage() { sed -n '2,28{s/^# \{0,1\}//;p;}' "$0"; }
 die() { echo "error: $*" >&2; exit 1; }
 
 while (( $# )); do
@@ -256,6 +257,7 @@ if (( do_push )); then
   git push origin "$branch"
   echo "→ git push origin v$new"
   git push origin "v$new"
+  echo "→ GitHub Actions will build and publish Release v$new"
 else
   cat <<EOF
 
@@ -264,5 +266,6 @@ Push when ready:
   git push origin v$new
 
 Or rerun with --push on a future release.
+Pushing the tag triggers the GitHub Release workflow.
 EOF
 fi

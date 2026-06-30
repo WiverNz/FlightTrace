@@ -1,0 +1,176 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} backend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_glob: dist/*.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_glob: dist/*.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Validate tag and project versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "error: tag is not valid SemVer: $tag" >&2
+            exit 1
+          fi
+
+          expected="${tag#v}"
+          cargo_version="$(awk '
+            /^\[workspace\.package\]/ { in_section = 1; next }
+            /^\[/ { in_section = 0 }
+            in_section && /^version *= *"/ {
+              match($0, /"[^"]*"/)
+              print substr($0, RSTART + 1, RLENGTH - 2)
+              exit
+            }
+          ' Cargo.toml)"
+          web_version="$(node -p "require('./web/package.json').version")"
+
+          [[ "$cargo_version" == "$expected" ]] || {
+            echo "error: Cargo version $cargo_version does not match tag $tag" >&2
+            exit 1
+          }
+          [[ "$web_version" == "$expected" ]] || {
+            echo "error: web version $web_version does not match tag $tag" >&2
+            exit 1
+          }
+
+      - name: Build flighttrace-cli
+        run: cargo build --locked --release --package flighttrace-cli --target ${{ matrix.target }}
+
+      - name: Smoke check Linux binary
+        if: runner.os == 'Linux'
+        run: ./target/${{ matrix.target }}/release/flighttrace --help
+
+      - name: Smoke check Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\target\${{ matrix.target }}\release\flighttrace.exe --help
+
+      - name: Package Linux archive
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#v}"
+          package="flighttrace-${version}-${{ matrix.target }}"
+          mkdir -p "dist/$package"
+          install -m 0755 \
+            "target/${{ matrix.target }}/release/flighttrace" \
+            "dist/$package/flighttrace"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$package/"
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $package = "flighttrace-$version-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path "dist/$package" | Out-Null
+          Copy-Item `
+            "target/${{ matrix.target }}/release/flighttrace.exe" `
+            "dist/$package/flighttrace.exe"
+          Copy-Item README.md,LICENSE-MIT,LICENSE-APACHE "dist/$package/"
+          Compress-Archive -Path "dist/$package" -DestinationPath "dist/$package.zip"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ matrix.asset_glob }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: artifacts
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          prerelease=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+
+          notes="$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}")"
+          notes="${notes%%-----BEGIN SSH SIGNATURE-----*}"
+          notes="${notes%%-----BEGIN PGP SIGNATURE-----*}"
+          if [[ -z "${notes//[[:space:]]/}" ]]; then
+            notes="Release ${GITHUB_REF_NAME}"
+          fi
+          cat > release-notes.md <<EOF
+          $notes
+
+          These archives contain the backend CLI only. The v0.1 web UI is not
+          bundled or served by this binary and must still be run from source.
+          EOF
+
+          gh release create "${GITHUB_REF_NAME}" artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "FlightTrace ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            "${prerelease[@]}"

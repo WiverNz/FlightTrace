@@ -61,6 +61,13 @@ All of these must pass locally and in CI before tagging.
 
 ## 5. Release tag checklist
 
+The preferred automated path is `scripts/release.sh <patch|minor|major> --push`.
+It synchronizes the Cargo and web versions, commits, creates the annotated tag,
+and pushes it. The tag pipeline then builds native Linux and Windows x86_64
+backend CLI archives, generates `SHA256SUMS`, and publishes all three assets in
+a GitHub Release using the annotated tag message as the release description.
+The release archives do not contain or serve the web UI in v0.1.
+
 - [ ] Decide the version. Bump per SemVer:
   - **major** if any public API in `flighttrace-core`, the HTTP API, or the YAML mission DSL changed in an incompatible way.
   - **minor** for additive features (new endpoints, new YAML checks, new CLI flags, new normalized event kinds).
@@ -76,7 +83,7 @@ All of these must pass locally and in CI before tagging.
   git tag -a v<x.y.z> -m "FlightTrace v<x.y.z>"
   git push origin v<x.y.z>
   ```
-- [ ] Create the GitHub release from the tag using the template in §6 below. Attach committed screenshots as inline images, not release assets.
+- [ ] Confirm the tag workflow created the GitHub Release with `flighttrace-<version>-x86_64-unknown-linux-gnu.tar.gz`, `flighttrace-<version>-x86_64-pc-windows-msvc.zip`, and `SHA256SUMS`. If publishing manually, use the template in §6 below. Attach committed screenshots as inline images, not release assets.
 - [ ] Announce in the project README (if applicable) or the team's usual channel.
 
 ## 6. GitHub release notes template
