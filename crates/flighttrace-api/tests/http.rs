@@ -64,6 +64,28 @@ async fn health_returns_ok() {
 }
 
 #[tokio::test]
+async fn cors_allows_vite_localhost_and_ipv4_loopback_origins() {
+    let router = test_router().await;
+
+    for origin in ["http://localhost:5173", "http://127.0.0.1:5173"] {
+        let request = Request::builder()
+            .method(Method::OPTIONS)
+            .uri("/api/runs")
+            .header(header::ORIGIN, origin)
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, Method::GET.as_str())
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            origin
+        );
+    }
+}
+
+#[tokio::test]
 async fn demo_run_then_list_includes_it() {
     let router = test_router().await;
 

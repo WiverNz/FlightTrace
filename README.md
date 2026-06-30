@@ -276,7 +276,8 @@ The Axum server in `flighttrace-api` exposes:
 
 All JSON uses `camelCase` field names. Errors return
 `{ "error": { "code": "...", "message": "..." } }` and the documented HTTP
-status. The dev CORS allowlist is `http://localhost:5173`.
+status. The dev CORS allowlist accepts `http://localhost:5173` and
+`http://127.0.0.1:5173`.
 
 ## Project layout
 

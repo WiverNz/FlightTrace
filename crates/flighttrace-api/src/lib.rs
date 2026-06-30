@@ -16,5 +16,5 @@ pub mod router;
 pub mod state;
 
 pub use error::{ApiError, ApiResult};
-pub use router::{DEFAULT_CORS_ORIGIN, build};
+pub use router::{DEFAULT_CORS_ORIGIN, LOOPBACK_CORS_ORIGIN, build};
 pub use state::AppState;

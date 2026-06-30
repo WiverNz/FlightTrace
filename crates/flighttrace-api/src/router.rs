@@ -11,15 +11,20 @@ use crate::state::AppState;
 
 /// Default CORS origin allowed in dev (Vite's default port).
 pub const DEFAULT_CORS_ORIGIN: &str = "http://localhost:5173";
+/// IPv4 loopback CORS origin used by the VS Code browser launch profiles.
+pub const LOOPBACK_CORS_ORIGIN: &str = "http://127.0.0.1:5173";
 
 /// Build the full FlightTrace API router with CORS and tracing layers.
 pub fn build(state: AppState) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(
+        .allow_origin(vec![
             DEFAULT_CORS_ORIGIN
                 .parse::<HeaderValue>()
                 .expect("valid CORS origin"),
-        )
+            LOOPBACK_CORS_ORIGIN
+                .parse::<HeaderValue>()
+                .expect("valid loopback CORS origin"),
+        ])
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE]);
 
