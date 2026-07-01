@@ -1,34 +1,37 @@
 :root {
-  --color-bg: #0b0e14;
-  --color-surface: #11151d;
-  --color-surface-2: #161b25;
-  --color-surface-3: #1c2230;
-  --color-border: #232a39;
-  --color-border-strong: #2e3849;
+  /* Palette — mirrors docs/tech-stack.md § Color Palette. */
+  --bg: #090d14;
+  --surface: #111722;
+  --surface-raised: #161d2a;
+  --surface-elevated: #1c2540;
+  --border: #273244;
+  --border-strong: #334156;
 
-  --color-text: #e6e9ef;
-  --color-text-dim: #9aa3b2;
-  --color-text-faint: #6b7283;
-  --color-link: #8ab4ff;
+  --text: #e6edf7;
+  --text-muted: #9aa8bd;
+  --text-dim: #6f7d91;
+  --link: #8ab4ff;
+  --neutral: #94a3b8;
 
-  --color-pass: #4ade80;
-  --color-warn: #facc15;
-  --color-fail: #f87171;
-  --color-neutral: #94a3b8;
+  --accent: #6ea8fe;
+  --danger: #ff5c6c;
+  --warning: #f5c66b;
+  --success: #39d98a;
 
-  --color-pass-bg: rgba(74, 222, 128, 0.12);
-  --color-warn-bg: rgba(250, 204, 21, 0.12);
-  --color-fail-bg: rgba(248, 113, 113, 0.12);
-  --color-neutral-bg: rgba(148, 163, 184, 0.12);
+  /* Tinted backgrounds — same alpha, using the palette above. */
+  --accent-bg: rgba(110, 168, 254, 0.12);
+  --danger-bg: rgba(255, 92, 108, 0.12);
+  --warning-bg: rgba(245, 198, 107, 0.12);
+  --success-bg: rgba(57, 217, 138, 0.12);
+  --neutral-bg: rgba(148, 163, 184, 0.12);
 
-  --color-accent: #60a5fa;
-  --color-accent-bg: rgba(96, 165, 250, 0.12);
-
+  /* Typography. */
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'JetBrains Mono', 'IBM Plex Mono',
-    'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', 'IBM Plex Mono',
+    Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
+  /* Spacing scale. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -37,6 +40,7 @@
   --space-6: 32px;
   --space-8: 48px;
 
+  /* Radii. */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
