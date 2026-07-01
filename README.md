@@ -219,6 +219,49 @@ sudo apt install \
     build-essential curl wget file libssl-dev
 ```
 
+On Ubuntu 24.04 LTS the correct package is `libwebkit2gtk-4.1-dev` —
+`libwebkit2gtk-4.0-dev` is now a transitional dummy. Tauri v2 auto-links
+against `4.1`, so the command above is enough. If you see
+`Package 'gobject-2.0'` or `Package 'glib-2.0'` errors from `pkg-config`
+during `cargo build`, `libglib2.0-dev` is the missing piece.
+
+Fedora / RHEL:
+
+```bash
+sudo dnf install \
+    webkit2gtk4.1-devel gtk3-devel glib2-devel \
+    libappindicator-gtk3-devel librsvg2-devel \
+    openssl-devel curl wget file
+sudo dnf group install "C Development Tools and Libraries"
+```
+
+Arch / Manjaro:
+
+```bash
+sudo pacman -S --needed \
+    webkit2gtk-4.1 gtk3 glib2 \
+    libappindicator-gtk3 librsvg \
+    base-devel curl wget file openssl
+```
+
+Running under **WSL2**: `cargo tauri dev` renders through WSLg on
+Windows 11 (default install, nothing extra needed). On Windows 10 you
+need a running X server (VcXsrv, X410) and `DISPLAY` exported before
+launching the app.
+
+WSL2 doesn't expose `/dev/dri`, so webkit2gtk's GPU-accelerated paths
+fail their probe and log `libEGL warning: failed to get driver name for
+fd -1`, `MESA-LOADER: failed to retrieve device information`, or `ZINK:
+failed to choose pdev`. These are cosmetic — WebKit falls back to
+software rendering and the window works fine. To silence them and skip
+the failing probe, export before running Tauri (also present as
+commented-out lines in `.env.example`):
+
+```bash
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+```
+
 macOS and Windows don't need extra system packages beyond the standard
 Tauri prerequisites — see [Tauri v2's prerequisites
 guide](https://v2.tauri.app/start/prerequisites/) for the current list.
