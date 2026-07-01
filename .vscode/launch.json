@@ -46,6 +46,19 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "CLI: gui (no args, default)",
+      "preLaunchTask": "web: build (prod)",
+      "cargo": {
+        "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
+        "filter": { "name": "flighttrace", "kind": "bin" }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "CLI: serve packaged (web-dir + open)",
       "preLaunchTask": "web: build (prod)",
       "cargo": {
