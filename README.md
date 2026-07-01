@@ -3,17 +3,30 @@
 [![CI](https://github.com/WiverNz/FlightTrace/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/WiverNz/FlightTrace/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-> A developer-first **mission debugger** that explains **why** autonomous
-> PX4/ArduPilot missions fail, with evidence.
+> **FlightTrace helps PX4/ArduPilot developers understand why
+> autonomous missions fail.** It records MAVLink telemetry, reconstructs
+> the mission timeline as normalized events, evaluates declarative YAML
+> assertions, and produces a structured failure report with cited
+> evidence — locally, on your machine, in one process.
 
-FlightTrace records MAVLink telemetry from PX4 or ArduPilot (SITL or real
-hardware), reconstructs the mission timeline as normalized events and
-telemetry samples, evaluates declarative YAML assertions against the run, and
-produces a structured failure report with cited evidence.
+**Read-only on the vehicle by construction.** The `flighttrace-mavlink`
+crate exposes no send function; an in-tree integration test greps the
+source on every build to guarantee it stays that way. FlightTrace never
+arms, never takes off, never changes modes, never uploads missions,
+never sends any command. See [§ Read-only guarantee](#read-only-guarantee)
+below.
 
-It is local-first (one Rust backend, one React frontend, one SQLite file on
-disk), strictly **read-only** on the vehicle, and ships with a deterministic
-demo run so you can evaluate the product without installing PX4 or ArduPilot.
+### Three ways to run it
+
+| Mode | Command | Use when |
+| --- | --- | --- |
+| **CLI, API-only** | `flighttrace serve --bind 127.0.0.1:8080 --database ./data/flighttrace.db` | Backend dev; hit the API with `curl`. |
+| **CLI, packaged web** | `flighttrace serve --web-dir ./web/dist --open` | One-process demo in the browser after `npm run build`. |
+| **Desktop (Tauri)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window; same UI, no separate browser. |
+
+Everything below unpacks these three modes and the demo scenario in
+detail. Start with [§ Quickstart — demo only](#quickstart--demo-only)
+for the fastest path to a rendered `TAKEOFF_TIMEOUT` failure report.
 
 ## What FlightTrace is
 
@@ -24,10 +37,12 @@ demo run so you can evaluate the product without installing PX4 or ArduPilot.
 
 ## What FlightTrace is not
 
+- **not a ground control station** — it cannot arm, disarm, change mode,
+  or send any command. Read-only, always.
+- **not AirData / Flight Review** — no cloud upload, no post-flight
+  sharing service.
+- **not fleet management** — single-user, single-vehicle by design.
 - not a telemetry dashboard
-- not an AirData / Flight Review clone
-- not a ground control station — it cannot arm, disarm, or change mode
-- not a fleet-management or ops platform
 - not a generic time-series database
 - not a cloud product, not multi-user, not multi-tenant
 - not an AI auto-diagnosis tool
@@ -499,22 +514,24 @@ curl -s http://127.0.0.1:18181/api/runs/<id>/failure-report
 
 ## Screenshots
 
-Captured images live under `docs/screenshots/` (a `.gitkeep` placeholder
-keeps the directory in git). To produce a fresh set:
+The four images below are **schematic placeholders** in the FlightTrace
+palette (~12 KB each) so this section never renders a broken image.
+Replace each file under `docs/screenshots/` with a real capture — see
+[`docs/screenshots/README.md`](docs/screenshots/README.md) for the
+capture recipe.
 
-1. Start the demo (`cargo run -p flighttrace-cli -- serve …` + `npm run dev`).
-2. Resize the browser to **1440×900** and use the dark theme that ships by
-   default.
-3. Click **Create demo failed run** so the runs list has at least one entry.
-4. Capture:
-   - `docs/screenshots/runs-list.png` — the runs list with the failed demo
-     run at the top.
-   - `docs/screenshots/run-detail.png` — the run detail page with the
-     failure report card visible.
-   - `docs/screenshots/failure-report.png` — a close-up of the failure
-     report card with the evidence list expanded.
-5. Keep each PNG under ~200 KB. Reference them inline in this README when
-   they are committed.
+|  |  |
+| --- | --- |
+| **Runs list** — failed demo run at the top, `TAKEOFF_TIMEOUT` badge. | **Failure summary** — plain-English sentence, five fact tiles, altitude chart with target line + failure marker. |
+| ![Runs list](docs/screenshots/runs-list.png) | ![Failure summary](docs/screenshots/run-detail-failure-summary.png) |
+| **Telemetry overview** — full altitude chart, vertical-speed panel, sample table. | **Desktop shell** — same UI in the Tauri v2 native window. |
+| ![Telemetry overview](docs/screenshots/run-detail-telemetry.png) | ![Desktop window](docs/screenshots/desktop-window.png) |
+
+To regenerate the placeholders after a palette change:
+
+```bash
+python3 scripts/generate_screenshot_placeholders.py
+```
 
 ## Troubleshooting
 
