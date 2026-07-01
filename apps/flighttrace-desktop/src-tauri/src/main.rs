@@ -51,6 +51,7 @@ fn get_app_version() -> &'static str {
 }
 
 fn main() -> Result<()> {
+    silence_wsl2_gpu_warnings();
     init_tracing();
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -349,6 +350,55 @@ fn sqlite_url_for(path: &Path) -> String {
     } else {
         format!("sqlite://{raw}")
     }
+}
+
+/// WSL2 doesn't expose `/dev/dri`, so webkit2gtk's GPU-accelerated paths
+/// (DMA-BUF renderer, ZINK on Mesa) fail their probe and log
+/// `libEGL warning: failed to get driver name for fd -1`,
+/// `MESA-LOADER: failed to retrieve device information`, or
+/// `ZINK: failed to choose pdev` before falling back to software rendering.
+/// The warnings look alarming but the app works fine — silence them by
+/// pre-setting the two WebKit env vars WSL2 users would set manually.
+///
+/// Only fires on Linux and only when the user hasn't already set the
+/// variables, so native Linux hosts with real GPUs keep hardware
+/// compositing. macOS + Windows are no-ops.
+fn silence_wsl2_gpu_warnings() {
+    #[cfg(target_os = "linux")]
+    {
+        if !is_wsl2() {
+            return;
+        }
+        // SAFETY: set before any threads are spawned; `env::set_var`
+        // races only across threads, not against single-threaded startup.
+        for (name, value) in [
+            ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+            ("WEBKIT_DISABLE_COMPOSITING_MODE", "1"),
+        ] {
+            if std::env::var_os(name).is_none() {
+                unsafe {
+                    std::env::set_var(name, value);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn is_wsl2() -> bool {
+    // Both markers are reliable: WSLg/WSL2 exports these, and the WSL2
+    // kernel injects "microsoft" (or "WSL2") into /proc/version.
+    if std::env::var_os("WSL_DISTRO_NAME").is_some()
+        || std::env::var_os("WSL_INTEROP").is_some()
+    {
+        return true;
+    }
+    std::fs::read_to_string("/proc/version")
+        .map(|s| {
+            let s = s.to_ascii_lowercase();
+            s.contains("microsoft") || s.contains("wsl")
+        })
+        .unwrap_or(false)
 }
 
 fn init_tracing() {

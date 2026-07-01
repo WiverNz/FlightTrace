@@ -122,14 +122,23 @@ MESA: error: ZINK: failed to choose pdev
 ```
 
 These are **cosmetic** — WebKit falls back to software rendering and
-the window works fine. To silence them and skip the failing probe,
-export before running Tauri (also present as commented-out lines in
-`.env.example`):
+the window works fine.
+
+As of issue 12 the shell auto-sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+and `WEBKIT_DISABLE_COMPOSITING_MODE=1` for you when it detects WSL2
+(via `WSL_DISTRO_NAME` / `WSL_INTEROP` env vars or `microsoft` in
+`/proc/version`). Native Linux hosts are unaffected — the detection
+only fires on WSL2, and existing values are respected so you can
+override either variable by exporting a different value first.
+
+To force the same defaults on a machine that isn't WSL2:
 
 ```bash
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 ```
+
+Both are also present as commented-out lines in `.env.example`.
 
 ## CI
 

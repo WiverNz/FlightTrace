@@ -63,12 +63,15 @@ cargo command. See [`desktop.md`](desktop.md).
 `MESA-LOADER: failed to retrieve device information`, and
 `ZINK: failed to choose pdev` from `cargo tauri dev` are cosmetic —
 WebKit falls back to software rendering and the window works fine.
-Silence them with:
+The desktop shell auto-silences these on WSL2 by pre-setting
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` and
+`WEBKIT_DISABLE_COMPOSITING_MODE=1`. If you're seeing them anyway you
+either have an older build that predates that fix, or the detection
+missed your environment — export both manually to be sure:
 
 ```bash
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 ```
 
-Both are commented out in `.env.example`. See [`desktop.md`](desktop.md)
-for context.
+See [`desktop.md`](desktop.md) for context.
