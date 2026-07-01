@@ -22,7 +22,7 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-use flighttrace_api::{AppState, build};
+use flighttrace_api::{AppState, build_with_static};
 use flighttrace_assertions::load_mission_file;
 use flighttrace_mavlink::{Dialect, MavlinkConfig, run_ingestion};
 use flighttrace_storage::connect;
@@ -72,6 +72,17 @@ enum Command {
         /// `FailureReport`. Env: `FLIGHTTRACE_MISSION`.
         #[arg(long, env = "FLIGHTTRACE_MISSION")]
         mission: Option<PathBuf>,
+        /// Directory that holds the prebuilt web UI (typically
+        /// `./web/dist`). When set, the API server also serves the SPA at
+        /// `http://<bind>/` with client-side routing fallback. Absent =
+        /// API-only. Env: `FLIGHTTRACE_WEB_DIR`.
+        #[arg(long, env = "FLIGHTTRACE_WEB_DIR")]
+        web_dir: Option<PathBuf>,
+        /// Open the default browser at `http://<bind>/` once the server
+        /// finishes binding. No-op in headless environments. Env:
+        /// `FLIGHTTRACE_OPEN`.
+        #[arg(long, env = "FLIGHTTRACE_OPEN")]
+        open: bool,
     },
 }
 
@@ -87,12 +98,16 @@ fn main() -> Result<()> {
             mavlink,
             mavlink_dialect,
             mission,
+            web_dir,
+            open,
         } => run_serve(
             bind,
             &database,
             mavlink.as_deref(),
             &mavlink_dialect,
             mission.as_deref(),
+            web_dir,
+            open,
         ),
     }
 }
@@ -121,6 +136,8 @@ fn run_serve(
     mavlink_endpoint: Option<&str>,
     mavlink_dialect: &str,
     mission_path: Option<&Path>,
+    web_dir: Option<PathBuf>,
+    open_browser: bool,
 ) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -140,6 +157,13 @@ fn run_serve(
             "--mission was supplied without --mavlink; the spec will be ignored because no MAVLink session is being ingested"
         );
     }
+
+    // Same fail-fast treatment for --web-dir: bad paths trip on startup, not
+    // on the first browser request.
+    let web_dir = match web_dir {
+        Some(dir) => Some(validate_web_dir(dir)?),
+        None => None,
+    };
 
     let mavlink_config = match mavlink_endpoint {
         Some(endpoint) => {
@@ -177,7 +201,18 @@ fn run_serve(
         let local = listener
             .local_addr()
             .context("read bound listener address")?;
-        info!(%local, "FlightTrace API listening");
+        if let Some(dir) = web_dir.as_ref() {
+            info!(%local, web_dir = %dir.display(), "FlightTrace API listening + serving UI");
+        } else {
+            info!(%local, "FlightTrace API listening");
+        }
+
+        if open_browser {
+            let url = format!("http://{local}/");
+            tokio::spawn(async move {
+                open_url_in_browser(&url);
+            });
+        }
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         // Signal-handling task: flips the watch on Ctrl+C / SIGTERM.
@@ -219,7 +254,7 @@ fn run_serve(
             }
         };
 
-        let router = build(AppState::new(pool.clone()));
+        let router = build_with_static(AppState::new(pool.clone()), web_dir.clone());
         let serve_result = axum::serve(listener, router)
             .with_graceful_shutdown(axum_shutdown)
             .await
@@ -248,6 +283,50 @@ fn sqlite_url_for(path: &Path) -> String {
         raw.into_owned()
     } else {
         format!("sqlite://{raw}")
+    }
+}
+
+/// Ensures `--web-dir` points at a directory that has a readable `index.html`.
+/// Same fail-fast intent as the mission YAML preflight.
+fn validate_web_dir(dir: PathBuf) -> Result<PathBuf> {
+    let metadata = std::fs::metadata(&dir).with_context(|| format!("read --web-dir {dir:?}"))?;
+    if !metadata.is_dir() {
+        anyhow::bail!("--web-dir {:?} is not a directory", dir);
+    }
+    let index = dir.join("index.html");
+    if !index.is_file() {
+        anyhow::bail!(
+            "--web-dir {:?} is missing an index.html — did you run `npm run build` in web/?",
+            dir
+        );
+    }
+    Ok(dir)
+}
+
+/// Platform-conditional "open URL in default browser" helper. Best-effort:
+/// errors are logged and never propagate — a headless CI or a missing
+/// launcher must not take the server down.
+fn open_url_in_browser(url: &str) {
+    #[cfg(target_os = "linux")]
+    let attempt = std::process::Command::new("xdg-open").arg(url).spawn();
+
+    #[cfg(target_os = "macos")]
+    let attempt = std::process::Command::new("open").arg(url).spawn();
+
+    #[cfg(target_os = "windows")]
+    let attempt = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn();
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let attempt: std::io::Result<std::process::Child> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "no known browser launcher on this platform",
+    ));
+
+    match attempt {
+        Ok(_) => info!(%url, "requested browser open"),
+        Err(err) => warn!(%err, %url, "could not open browser (continuing headless)"),
     }
 }
 
@@ -290,14 +369,24 @@ mod tests {
     use super::*;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
-    const CONFIG_ENV_VARS: [&str; 5] = [
+    const CONFIG_ENV_VARS: [&str; 7] = [
         "FLIGHTTRACE_BIND",
         "FLIGHTTRACE_DATABASE",
         "FLIGHTTRACE_MAVLINK",
         "FLIGHTTRACE_MAVLINK_DIALECT",
         "FLIGHTTRACE_MISSION",
+        "FLIGHTTRACE_WEB_DIR",
+        "FLIGHTTRACE_OPEN",
     ];
-    type ServeConfig = (SocketAddr, PathBuf, Option<String>, String, Option<PathBuf>);
+    type ServeConfig = (
+        SocketAddr,
+        PathBuf,
+        Option<String>,
+        String,
+        Option<PathBuf>,
+        Option<PathBuf>,
+        bool,
+    );
 
     struct EnvGuard {
         values: Vec<(&'static str, Option<OsString>)>,
@@ -349,7 +438,17 @@ mod tests {
                 mavlink,
                 mavlink_dialect,
                 mission,
-            } => (bind, database, mavlink, mavlink_dialect, mission),
+                web_dir,
+                open,
+            } => (
+                bind,
+                database,
+                mavlink,
+                mavlink_dialect,
+                mission,
+                web_dir,
+                open,
+            ),
             Command::Demo => panic!("expected serve command"),
         }
     }
@@ -366,6 +465,8 @@ mod tests {
         assert_eq!(config.2, None);
         assert_eq!(config.3, "common");
         assert_eq!(config.4, None);
+        assert_eq!(config.5, None);
+        assert!(!config.6);
     }
 
     #[test]
@@ -432,5 +533,34 @@ mod tests {
             config.4,
             Some(PathBuf::from("examples/missions/simple_takeoff.yaml"))
         );
+    }
+
+    #[test]
+    fn serve_reads_web_dir_and_open_from_environment() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let env = EnvGuard::cleared();
+        env.set("FLIGHTTRACE_WEB_DIR", "./web/dist");
+        env.set("FLIGHTTRACE_OPEN", "true");
+
+        let config = parse_serve(&["flighttrace", "serve"]);
+
+        assert_eq!(config.5, Some(PathBuf::from("./web/dist")));
+        assert!(config.6);
+    }
+
+    #[test]
+    fn serve_cli_flags_override_web_dir_environment() {
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let env = EnvGuard::cleared();
+        env.set("FLIGHTTRACE_WEB_DIR", "./env/dist");
+        env.set("FLIGHTTRACE_OPEN", "true");
+
+        let config = parse_serve(&["flighttrace", "serve", "--web-dir", "./cli/dist"]);
+
+        assert_eq!(config.5, Some(PathBuf::from("./cli/dist")));
+        // --open is a bool flag; env stays authoritative when the CLI flag is
+        // absent (no way to explicitly say "off" without --open=false, and
+        // clap treats a bare --open as true).
+        assert!(config.6);
     }
 }

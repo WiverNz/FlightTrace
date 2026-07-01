@@ -124,6 +124,8 @@ Every `serve` option can also come from the environment. Resolution order is
 | `FLIGHTTRACE_MAVLINK` | `--mavlink` | unset |
 | `FLIGHTTRACE_MAVLINK_DIALECT` | `--mavlink-dialect` | `common` |
 | `FLIGHTTRACE_MISSION` | `--mission` | unset |
+| `FLIGHTTRACE_WEB_DIR` | `--web-dir` | unset (API-only) |
+| `FLIGHTTRACE_OPEN` | `--open` | unset |
 
 `RUST_LOG` controls tracing output and `RUST_BACKTRACE` has its normal Rust
 meaning. Copy the example and export it into the current shell before running
@@ -146,6 +148,37 @@ uses debug bind address `127.0.0.1:8088`, leaving the README quickstart on
 port `8080`. MAVLink and mission variables are commented out by default, so
 the `CLI: serve demo-only` profile remains demo-only; the MAVLink profile
 supplies them as CLI flags.
+
+### Run modes — dev vs. packaged
+
+FlightTrace runs in two shapes:
+
+- **Dev mode (two processes).** `cargo run … serve` on `:8080` and
+  `npm run dev` on `:5173`. Best for frontend iteration; Vite's HMR is
+  live. This is the workflow used above.
+- **Packaged mode (one process).** Build the frontend once, then let
+  `flighttrace serve` also serve the bundle from the same origin. Best
+  for evaluation, screenshots, and shipping a single binary alongside a
+  `web-dist/` folder.
+
+```bash
+# One-time frontend build.
+cd web && npm ci && npm run build && cd ..
+
+# One process serves both the API and the UI.
+cargo run -p flighttrace-cli -- serve \
+    --bind 127.0.0.1:8080 \
+    --database ./data/flighttrace.db \
+    --web-dir ./web/dist \
+    --open
+```
+
+Then open <http://127.0.0.1:8080>. `--open` launches the default browser
+once the listener binds — drop it in headless environments. Client-side
+routes like `/runs/<id>` fall back to `index.html`, so React Router
+still owns them; unknown `/api/*` paths still return the JSON 404
+envelope. When `--web-dir` is omitted the API-only behaviour is
+identical to previous releases.
 
 ## Quickstart — ArduPilot SITL
 

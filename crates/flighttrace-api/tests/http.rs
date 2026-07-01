@@ -1,7 +1,7 @@
 //! HTTP integration tests that exercise the full router against an
 //! in-memory SQLite pool via `tower::ServiceExt::oneshot`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::Router;
 use axum::body::Body;
@@ -9,8 +9,9 @@ use axum::http::{Method, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
+use uuid::Uuid;
 
-use flighttrace_api::{AppState, build};
+use flighttrace_api::{AppState, build, build_with_static};
 use flighttrace_storage::connect_in_memory;
 
 /// Absolute path to `examples/missions/simple_takeoff.yaml`, regardless of
@@ -389,6 +390,189 @@ async fn create_demo_run(router: &Router) -> String {
     let (status, body) = json_response(router, req).await;
     assert_eq!(status, StatusCode::CREATED);
     body["id"].as_str().expect("id is a string").to_string()
+}
+
+/// A temp-dir + on-drop cleanup that stands in for the `tempfile` dev-dep so
+/// this crate doesn't grow another dependency.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("flighttrace-web-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("create scratch dir");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn write(&self, rel: &str, contents: &str) {
+        let target = self.path.join(rel);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(&target, contents).expect("write scratch file");
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+async fn router_with_web_dir(dir: &Path) -> Router {
+    let pool = connect_in_memory().await.expect("pool");
+    let state = AppState::new(pool);
+    build_with_static(state, Some(dir.to_path_buf()))
+}
+
+async fn text_response(router: &Router, req: Request<Body>) -> (StatusCode, String) {
+    let response = router.clone().oneshot(req).await.expect("oneshot succeeds");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect body")
+        .to_bytes();
+    let text = String::from_utf8(bytes.to_vec()).expect("utf-8 body");
+    (status, text)
+}
+
+#[tokio::test]
+async fn health_still_works_with_web_dir() {
+    let scratch = ScratchDir::new();
+    scratch.write("index.html", "<!doctype html><title>root</title>");
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = json_response(&router, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "ok");
+    assert!(body["version"].is_string());
+}
+
+#[tokio::test]
+async fn api_still_works_with_web_dir() {
+    let scratch = ScratchDir::new();
+    scratch.write("index.html", "<!doctype html><title>root</title>");
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let create_req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/demo/run")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = json_response(&router, create_req).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(body["id"].is_string());
+
+    let list_req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/runs")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = json_response(&router, list_req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn root_serves_index_html() {
+    let scratch = ScratchDir::new();
+    let marker = "<!doctype html><title>MARKER-INDEX</title>";
+    scratch.write("index.html", marker);
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = text_response(&router, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("MARKER-INDEX"),
+        "expected index.html body, got {body}",
+    );
+}
+
+#[tokio::test]
+async fn spa_fallback_serves_index_html_for_client_routes() {
+    let scratch = ScratchDir::new();
+    let marker = "<!doctype html><title>MARKER-SPA</title>";
+    scratch.write("index.html", marker);
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/runs/does-not-exist")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = text_response(&router, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("MARKER-SPA"),
+        "expected SPA fallback to index.html, got {body}",
+    );
+}
+
+#[tokio::test]
+async fn assets_serve_actual_files() {
+    let scratch = ScratchDir::new();
+    scratch.write("index.html", "<!doctype html><title>root</title>");
+    let asset_marker = "console.log('MARKER-ASSET')";
+    scratch.write("assets/app.js", asset_marker);
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/assets/app.js")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = text_response(&router, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body, asset_marker,
+        "expected real asset file, not SPA fallback",
+    );
+}
+
+#[tokio::test]
+async fn unknown_api_path_still_returns_json_404() {
+    let scratch = ScratchDir::new();
+    scratch.write("index.html", "<!doctype html><title>root</title>");
+    let router = router_with_web_dir(scratch.path()).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/nonsense-that-does-not-exist")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = json_response(&router, req).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "not_found");
+}
+
+#[tokio::test]
+async fn without_web_dir_root_is_still_404() {
+    // Sanity check that the API-only mode did not regress into serving files.
+    let router = test_router().await;
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(req).await.expect("oneshot");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
