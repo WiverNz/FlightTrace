@@ -3,7 +3,7 @@
 /web/node_modules
 /web/dist
 
-# Local env overrides (Vite, etc.).
+# Local env overrides (Vite + flighttrace CLI). `.env.example` is tracked.
 .env
 .env.*.local
 .env.local

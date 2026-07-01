@@ -315,9 +315,16 @@ table.data th.mono {
 
 .failure-summary-facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-2);
-  margin: 0;
+  margin: 0 0 var(--space-4);
+}
+
+.failure-summary-chart {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  padding: var(--space-3) var(--space-4) var(--space-2);
 }
 
 .failure-fact {
@@ -480,37 +487,263 @@ table.data th.mono {
 }
 
 .telemetry-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.telemetry-charts {
   display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--space-4);
   align-items: start;
 }
 
-.telemetry-overview .sparkline-wrap {
+.telemetry-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.telemetry-side-stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
   background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--space-3);
 }
 
-.telemetry-overview .sparkline-wrap h3 {
-  margin: 0 0 var(--space-2) 0;
+.telemetry-side-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.telemetry-side-stats dt {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+
+.telemetry-side-stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.altitude-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.altitude-chart--compact {
+  max-width: 100%;
+}
+
+.altitude-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--color-surface-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.altitude-chart-area {
+  fill: var(--color-accent-bg);
+  stroke: none;
+}
+
+.altitude-chart-line {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.altitude-chart-grid line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.altitude-chart-axis {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+.altitude-chart-tick {
+  fill: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.altitude-chart-target line {
+  stroke: var(--color-pass);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  opacity: 0.85;
+}
+
+.altitude-chart-target-label {
+  fill: var(--color-pass);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.altitude-chart-marker line {
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.85;
+}
+
+.altitude-chart-marker.fail line {
+  stroke: var(--color-fail);
+}
+
+.altitude-chart-marker.warn line {
+  stroke: var(--color-warn);
+}
+
+.altitude-chart-marker-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.altitude-chart-marker.fail .altitude-chart-marker-label {
+  fill: var(--color-fail);
+}
+
+.altitude-chart-marker.warn .altitude-chart-marker-label {
+  fill: var(--color-warn);
+}
+
+.altitude-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-dim);
+}
+
+.altitude-chart-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.altitude-chart-legend strong {
+  color: var(--color-text);
+}
+
+.altitude-chart-legend .swatch {
+  width: 14px;
+  height: 2px;
+  background: var(--color-accent);
+  display: inline-block;
+}
+
+.altitude-chart-legend .swatch.dashed {
+  background: transparent;
+  border-top: 2px dashed var(--color-pass);
+  height: 0;
+}
+
+.altitude-chart-legend .swatch.marker.fail {
+  border-top: 2px dashed var(--color-fail);
+  background: transparent;
+  height: 0;
+}
+
+.altitude-chart-legend .swatch.marker.warn {
+  border-top: 2px dashed var(--color-warn);
+  background: transparent;
+  height: 0;
+}
+
+.altitude-chart-legend .legend-item.gap strong {
+  color: var(--color-fail);
+}
+
+.vspeed-summary {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.vspeed-summary header h3 {
+  margin: 0;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-dim);
 }
 
-.telemetry-overview .sparkline-wrap .stat {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  font-size: 12px;
-  color: var(--color-text-dim);
-  margin-top: var(--space-2);
+.vspeed-spark {
+  width: 100%;
+  height: 40px;
+  display: block;
 }
 
-.telemetry-overview .sparkline-wrap .stat .value {
+.vspeed-zero {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.vspeed-line {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.4;
+}
+
+.vspeed-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.vspeed-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vspeed-stats dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+
+.vspeed-stats dd {
+  margin: 0;
   font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--color-text);
+}
+
+.vspeed-stats dd.up {
+  color: var(--color-pass);
+}
+
+.vspeed-stats dd.down {
+  color: var(--color-fail);
 }
 
 .telemetry-table-wrap {
@@ -532,6 +765,35 @@ table.data th.mono {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
+}
+
+.raw-event-section {
+  margin-top: var(--space-6);
+  background: var(--color-surface-2);
+  border-color: var(--color-border);
+  opacity: 0.92;
+}
+
+.raw-event-section[open] {
+  opacity: 1;
+}
+
+.raw-event-section .section-header {
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
+.raw-event-section[open] .section-header {
+  border-bottom-color: var(--color-border);
+}
+
+.raw-event-section .section-header h2 {
+  font-size: 11.5px;
+  color: var(--color-text-faint);
+}
+
+.raw-event-wrap {
+  max-height: 320px;
 }
 
 .raw-event-summary {
@@ -612,6 +874,16 @@ table.data th.mono {
 .short-id {
   font-family: var(--font-mono);
   color: var(--color-accent);
+}
+
+@media (max-width: 1100px) {
+  .failure-summary-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .telemetry-charts {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 800px) {

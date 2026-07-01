@@ -26,7 +26,8 @@ import { TelemetryOverview } from '../components/TelemetryOverview';
 import { RawEventLog } from '../components/RawEventLog';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { formatDurationMs, formatIso, shortId } from '../format';
+import type { AltitudeChartMarker } from '../components/AltitudeChart';
+import { formatDurationMs, formatIso, formatRelativeTime, shortId } from '../format';
 
 interface Loadable<T> {
   data: T | null;
@@ -244,7 +245,17 @@ export function RunDetailPage() {
           )}
           {telemetry.error == null &&
             (telemetry.data ? (
-              <TelemetryOverview samples={telemetry.data} />
+              <TelemetryOverview
+                samples={telemetry.data}
+                startedAt={run.data?.startedAt ?? null}
+                targetAltitudeM={deriveTargetAltitude(assertions.data)}
+                markers={deriveAltitudeMarkers(
+                  assertions.data,
+                  events.data,
+                  report.data,
+                  run.data?.startedAt ?? null,
+                )}
+              />
             ) : (
               <LoadingState label="loading telemetry…" />
             ))}
@@ -291,4 +302,54 @@ function RunNotFound({ id }: { id: string }) {
 function guard(err: unknown, fn: () => void) {
   if ((err as { name?: string }).name === 'AbortError') return;
   fn();
+}
+
+function deriveTargetAltitude(
+  assertions: AssertionResultDto[] | null,
+): number | null {
+  if (!assertions) return null;
+  const failing = assertions.find(
+    (a) => a.outcome === 'FAIL' && a.name.endsWith('.altitude_at_least_m'),
+  );
+  const match = failing?.detail.match(/target=([-+]?\d+(?:\.\d+)?)m/i);
+  if (!match) return null;
+  const target = Number(match[1]);
+  return Number.isFinite(target) ? target : null;
+}
+
+function deriveAltitudeMarkers(
+  assertions: AssertionResultDto[] | null,
+  events: NormalizedEventDto[] | null,
+  report: FailureReportDto | null,
+  startedAt: string | null,
+): AltitudeChartMarker[] {
+  const markers: AltitudeChartMarker[] = [];
+
+  const statustext = events?.find((e) => e.kind === 'StatustextReceived');
+  const statustextEvidence =
+    statustext == null
+      ? report?.evidence.find((e) => e.kind === 'Statustext')
+      : null;
+  if (statustext) {
+    markers.push({ at: statustext.at, label: 'STATUSTEXT', tone: 'warn' });
+  } else if (statustextEvidence && statustextEvidence.kind === 'Statustext') {
+    markers.push({
+      at: statustextEvidence.at,
+      label: 'STATUSTEXT',
+      tone: 'warn',
+    });
+  }
+
+  const failing = assertions?.find(
+    (a) => a.outcome === 'FAIL' && a.name.endsWith('.altitude_at_least_m'),
+  );
+  const failureAt = failing?.evaluatedAt ?? report?.generatedAt ?? null;
+  if (failureAt) {
+    const label = startedAt
+      ? `failure ${formatRelativeTime(failureAt, startedAt)}`
+      : 'failure';
+    markers.push({ at: failureAt, label, tone: 'fail' });
+  }
+
+  return markers;
 }

@@ -1,11 +1,13 @@
 import type {
   AssertionResultDto,
+  EvidenceDto,
   FailureReportDto,
   MissionRunDto,
   NormalizedEventDto,
   TelemetrySampleDto,
 } from '../types/api';
-import { formatDurationMs } from '../format';
+import { formatDurationMs, formatRelativeTime } from '../format';
+import { AltitudeChart, type AltitudeChartMarker } from './AltitudeChart';
 
 interface Props {
   report: FailureReportDto;
@@ -18,6 +20,11 @@ interface Props {
 interface AltitudeResult {
   actual: number;
   target: number;
+}
+
+interface StatustextHit {
+  text: string;
+  at: string;
 }
 
 export function FailureSummary({
@@ -36,18 +43,44 @@ export function FailureSummary({
   const actualAltitude =
     parsedAltitude?.actual ?? maximumAltitude(telemetry ?? []);
   const targetAltitude = parsedAltitude?.target;
-  const timeoutMs =
-    run && altitudeAssertion
-      ? Date.parse(altitudeAssertion.evaluatedAt) - Date.parse(run.startedAt)
+  const altitudeGap =
+    targetAltitude != null && actualAltitude != null
+      ? Math.max(0, targetAltitude - actualAltitude)
       : null;
-  const lastStatustext = findLastStatustext(events ?? [], report);
+  const failureAt = altitudeAssertion?.evaluatedAt ?? report.generatedAt;
+  const timeoutMs =
+    run && failureAt
+      ? Date.parse(failureAt) - Date.parse(run.startedAt)
+      : null;
+  const failureRelative =
+    run && failureAt ? formatRelativeTime(failureAt, run.startedAt) : null;
+  const statustextHit = findLastStatustext(events ?? [], report);
 
   const takeoffExplanation =
     report.reason === 'TAKEOFF_TIMEOUT' &&
     targetAltitude != null &&
     actualAltitude != null
-      ? `TAKEOFF_TIMEOUT happened because target altitude was ${targetAltitude.toFixed(1)} m, but the vehicle only reached ${actualAltitude.toFixed(1)} m and then stopped climbing${lastStatustext ? ` after “${lastStatustext}”` : ''}.`
+      ? `TAKEOFF_TIMEOUT happened because target altitude was ${targetAltitude.toFixed(1)} m, but the vehicle only reached ${actualAltitude.toFixed(1)} m and stopped climbing${statustextHit ? ` after “${statustextHit.text}”.` : '.'}`
       : report.summary;
+
+  const markers: AltitudeChartMarker[] = [];
+  if (statustextHit) {
+    markers.push({
+      at: statustextHit.at,
+      label: 'STATUSTEXT',
+      tone: 'warn',
+    });
+  }
+  if (failureAt) {
+    markers.push({
+      at: failureAt,
+      label: `failure ${failureRelative ?? ''}`.trim(),
+      tone: 'fail',
+    });
+  }
+
+  const showChart =
+    telemetry != null && telemetry.length > 0 && run != null;
 
   return (
     <section className="section failure-summary">
@@ -69,15 +102,35 @@ export function FailureSummary({
             tone="actual"
           />
           <Fact
-            label="Timeout window"
+            label="Altitude gap"
+            value={altitudeGap != null ? `${altitudeGap.toFixed(1)} m` : '—'}
+            tone={altitudeGap != null && altitudeGap > 0 ? 'actual' : undefined}
+          />
+          <Fact
+            label="Failure time"
             value={
-              timeoutMs != null && timeoutMs >= 0
-                ? formatDurationMs(timeoutMs)
+              failureRelative && timeoutMs != null && timeoutMs >= 0
+                ? `${failureRelative} (${formatDurationMs(timeoutMs)})`
                 : '—'
             }
           />
-          <Fact label="Last STATUSTEXT" value={lastStatustext ?? '—'} />
+          <Fact
+            label="Last STATUSTEXT"
+            value={statustextHit?.text ?? '—'}
+          />
         </dl>
+
+        {showChart && (
+          <div className="failure-summary-chart">
+            <AltitudeChart
+              samples={telemetry!}
+              startedAt={run!.startedAt}
+              targetAltitudeM={targetAltitude ?? null}
+              markers={markers}
+              variant="compact"
+            />
+          </div>
+        )}
       </div>
     </section>
   );
@@ -122,16 +175,20 @@ function maximumAltitude(samples: TelemetrySampleDto[]): number | null {
 function findLastStatustext(
   events: NormalizedEventDto[],
   report: FailureReportDto,
-): string | null {
+): StatustextHit | null {
   const event = [...events]
     .filter((item) => item.kind === 'StatustextReceived')
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
-  if (event?.kind === 'StatustextReceived') return event.text;
+  if (event?.kind === 'StatustextReceived') {
+    return { text: event.text, at: event.at };
+  }
 
   const evidence = [...report.evidence]
-    .filter((item) => item.kind === 'Statustext')
+    .filter((item): item is Extract<EvidenceDto, { kind: 'Statustext' }> =>
+      item.kind === 'Statustext',
+    )
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
-  return evidence?.kind === 'Statustext' ? evidence.text : null;
+  return evidence ? { text: evidence.text, at: evidence.at } : null;
 }
 
 function formatMetres(value: number | null | undefined): string {

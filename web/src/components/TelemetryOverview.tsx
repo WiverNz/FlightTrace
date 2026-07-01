@@ -1,11 +1,21 @@
 import type { TelemetrySampleDto } from '../types/api';
 import { fmtNumber, formatTimeOfDay } from '../format';
+import { AltitudeChart, type AltitudeChartMarker } from './AltitudeChart';
+import { VerticalSpeedSummary } from './VerticalSpeedSummary';
 
 interface Props {
   samples: TelemetrySampleDto[];
+  startedAt: string | null;
+  targetAltitudeM?: number | null;
+  markers?: AltitudeChartMarker[];
 }
 
-export function TelemetryOverview({ samples }: Props) {
+export function TelemetryOverview({
+  samples,
+  startedAt,
+  targetAltitudeM,
+  markers,
+}: Props) {
   if (samples.length === 0) {
     return <p className="muted">No telemetry samples for this run.</p>;
   }
@@ -17,26 +27,41 @@ export function TelemetryOverview({ samples }: Props) {
 
   return (
     <div className="telemetry-overview">
-      <div className="sparkline-wrap">
-        <h3>Altitude (m)</h3>
-        <Sparkline values={altitudes} />
-        <div className="stat">
-          <span>max</span>
-          <span className="value">{fmtNumber(max)} m</span>
-        </div>
-        <div className="stat">
-          <span>last</span>
-          <span className="value">{fmtNumber(last.altitudeM)} m</span>
-        </div>
-        <div className="stat">
-          <span>samples</span>
-          <span className="value">{samples.length}</span>
-        </div>
-        <div className="stat">
-          <span>window</span>
-          <span className="value">
-            {formatTimeOfDay(first.at)} → {formatTimeOfDay(last.at)}
-          </span>
+      <div className="telemetry-charts">
+        {startedAt ? (
+          <AltitudeChart
+            samples={samples}
+            startedAt={startedAt}
+            targetAltitudeM={targetAltitudeM}
+            markers={markers}
+            variant="full"
+          />
+        ) : (
+          <p className="muted">Run start time unavailable.</p>
+        )}
+
+        <div className="telemetry-side">
+          <VerticalSpeedSummary samples={samples} />
+          <dl className="telemetry-side-stats">
+            <div>
+              <dt>max altitude</dt>
+              <dd>{fmtNumber(max)} m</dd>
+            </div>
+            <div>
+              <dt>last altitude</dt>
+              <dd>{fmtNumber(last.altitudeM)} m</dd>
+            </div>
+            <div>
+              <dt>samples</dt>
+              <dd>{samples.length}</dd>
+            </div>
+            <div>
+              <dt>window</dt>
+              <dd className="mono">
+                {formatTimeOfDay(first.at)} → {formatTimeOfDay(last.at)}
+              </dd>
+            </div>
+          </dl>
         </div>
       </div>
 
@@ -67,45 +92,5 @@ export function TelemetryOverview({ samples }: Props) {
         </table>
       </div>
     </div>
-  );
-}
-
-interface SparkProps {
-  values: number[];
-  width?: number;
-  height?: number;
-}
-
-function Sparkline({ values, width = 220, height = 56 }: SparkProps) {
-  if (values.length === 0) {
-    return null;
-  }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const stepX = values.length > 1 ? width / (values.length - 1) : width;
-  const points = values
-    .map((v, i) => {
-      const x = i * stepX;
-      const y = height - ((v - min) / span) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label="altitude sparkline"
-    >
-      <polyline
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth={1.5}
-        points={points}
-      />
-    </svg>
   );
 }
