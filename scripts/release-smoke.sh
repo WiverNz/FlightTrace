@@ -168,6 +168,96 @@ if [[ -n "$run_id" ]]; then
 fi
 
 echo
+echo "→ GUI mode (no arguments, release-archive shape)"
+
+# Stage a scratch tree that looks like an extracted release archive:
+#   <archive>/flighttrace
+#   <archive>/web-dist/index.html
+# then invoke the binary bare from inside it. The binary should
+# auto-detect web-dist (via CWD lookup), bind a random port, and print
+# the URL to stdout — parse it and hit /health.
+gui_pkg="$scratch/gui-pkg"
+mkdir -p "$gui_pkg"
+cp -R "$web_dist" "$gui_pkg/web-dist"
+cp "$bin" "$gui_pkg/flighttrace"
+
+gui_log="$scratch/gui.log"
+gui_stdout="$scratch/gui.stdout"
+
+# `cd` in a subshell so the parent's cwd is untouched; the trailing `&`
+# runs the binary in the background of the *parent* script, so `$!`
+# gives us its PID directly.
+(cd "$gui_pkg" && exec ./flighttrace) >"$gui_stdout" 2>"$gui_log" &
+gui_pid=$!
+
+# Wait for the printed URL (up to 10 s).
+gui_url=""
+for _ in $(seq 1 50); do
+  if [[ -s "$gui_stdout" ]]; then
+    gui_url=$(grep -oE 'http://127\.0\.0\.1:[0-9]+' "$gui_stdout" | head -1 || true)
+    [[ -n "$gui_url" ]] && break
+  fi
+  if [[ -n "$gui_pid" ]] && ! kill -0 "$gui_pid" 2>/dev/null; then break; fi
+  sleep 0.2
+done
+
+if [[ -z "$gui_url" ]]; then
+  echo "  FAIL GUI mode never printed a URL" >&2
+  echo "--- gui stdout ---" >&2
+  cat "$gui_stdout" >&2 || true
+  echo "--- gui stderr (last 40 lines) ---" >&2
+  tail -n 40 "$gui_log" >&2 || true
+  fail=1
+else
+  # Same check surface as the explicit-serve block, one call each.
+  gui_health=$(curl -fsS --max-time 3 "$gui_url/health" || true)
+  if [[ -n "$gui_health" ]] && \
+     [[ $(python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])' <<<"$gui_health") == "ok" ]]; then
+    echo "  OK   GUI mode printed $gui_url and /health is JSON status=ok"
+  else
+    echo "  FAIL GUI mode printed URL but /health did not respond as expected" >&2
+    echo "--- gui stderr (last 40 lines) ---" >&2
+    tail -n 40 "$gui_log" >&2 || true
+    fail=1
+  fi
+  # Confirm the SPA renders too.
+  gui_root=$(curl -fsSI --max-time 3 "$gui_url/" || true)
+  if echo "$gui_root" | grep -qi '^content-type: text/html'; then
+    echo "  OK   GUI mode / returns text/html"
+  else
+    echo "  FAIL GUI mode / did not return text/html" >&2
+    fail=1
+  fi
+fi
+
+if [[ -n "$gui_pid" ]] && kill -0 "$gui_pid" 2>/dev/null; then
+  kill "$gui_pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    kill -0 "$gui_pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  kill -9 "$gui_pid" 2>/dev/null || true
+fi
+
+# Also verify the actionable error path — a directory with no web-dist
+# should exit non-zero with the documented message.
+err_pkg="$scratch/gui-no-web"
+mkdir -p "$err_pkg"
+cp "$bin" "$err_pkg/flighttrace"
+err_log="$scratch/gui-err.log"
+if ( cd "$err_pkg" && ./flighttrace >"$err_log" 2>&1 ); then
+  echo "  FAIL GUI mode without web-dist exited zero (should fail)" >&2
+  cat "$err_log" >&2 || true
+  fail=1
+elif grep -q "No web UI found" "$err_log"; then
+  echo "  OK   GUI mode without web-dist prints actionable error"
+else
+  echo "  FAIL GUI mode failed without the documented message" >&2
+  cat "$err_log" >&2 || true
+  fail=1
+fi
+
+echo
 if (( fail == 0 )); then
   echo "release-smoke: all checks passed"
 else

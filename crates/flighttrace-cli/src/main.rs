@@ -1,10 +1,19 @@
 //! FlightTrace CLI entrypoint.
 //!
-//! `demo` prints the deterministic `TAKEOFF_TIMEOUT` bundle to stdout as JSON.
-//! `serve` opens (or creates) a SQLite database, runs the embedded
-//! migrations, and starts the Axum API on the requested address. Pass
-//! `--mavlink udp://host:port` to additionally bind a read-only MAVLink UDP
-//! listener (issue 4) that persists live SITL traffic into the same database.
+//! Run modes:
+//!
+//! * **No arguments** — launch the packaged GUI. Auto-detects a `web-dist`
+//!   directory (see [`resolve_gui_web_dir`]), binds a free loopback port,
+//!   prints the URL, and opens the default browser. This is what a user
+//!   double-clicking `flighttrace.exe` from a release archive gets.
+//! * `gui` — same as no-arguments, but explicit for scripting.
+//! * `demo` — print the deterministic `TAKEOFF_TIMEOUT` bundle to stdout as
+//!   JSON.
+//! * `serve` — open (or create) a SQLite database, run the embedded
+//!   migrations, and start the Axum API on the requested address. Pass
+//!   `--mavlink udp://host:port` to additionally bind a read-only MAVLink
+//!   UDP listener (issue 4) that persists live SITL traffic into the same
+//!   database.
 //!
 //! Each `serve` flag also reads a matching `FLIGHTTRACE_*` environment
 //! variable as a fallback, so a `.env` file can drive local-dev configuration
@@ -14,7 +23,7 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
@@ -35,12 +44,18 @@ use flighttrace_storage::connect;
     long_about = None,
 )]
 struct Cli {
+    /// With no subcommand, run the packaged GUI (see the `gui` subcommand
+    /// for the same behaviour explicitly).
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Launch the FlightTrace UI — auto-detects `web-dist`, binds a free
+    /// loopback port, prints the URL, opens the default browser. This is
+    /// what `flighttrace` with no arguments runs.
+    Gui,
     /// Print the deterministic TAKEOFF_TIMEOUT demo mission run as pretty JSON.
     Demo,
     /// Start the FlightTrace HTTP API backed by a local SQLite database.
@@ -91,8 +106,11 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Demo => run_demo(),
-        Command::Serve {
+        // Bare `flighttrace` (double-click, release-archive shape) and the
+        // explicit `gui` subcommand share one handler.
+        None | Some(Command::Gui) => run_gui(),
+        Some(Command::Demo) => run_demo(),
+        Some(Command::Serve {
             bind,
             database,
             mavlink,
@@ -100,7 +118,7 @@ fn main() -> Result<()> {
             mission,
             web_dir,
             open,
-        } => run_serve(
+        }) => run_serve(
             bind,
             &database,
             mavlink.as_deref(),
@@ -108,6 +126,7 @@ fn main() -> Result<()> {
             mission.as_deref(),
             web_dir,
             open,
+            false,
         ),
     }
 }
@@ -130,6 +149,129 @@ fn run_demo() -> Result<()> {
     Ok(())
 }
 
+/// Default GUI launch — what `flighttrace` with no arguments runs.
+///
+/// Auto-detects `web-dist`, binds a free loopback port, prints the URL
+/// to stdout, and opens the default browser. If no `web-dist` can be
+/// located anywhere, returns an actionable error.
+fn run_gui() -> Result<()> {
+    let web_dir = resolve_gui_web_dir()?;
+    let database = std::env::var_os("FLIGHTTRACE_DATABASE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(GUI_DEFAULT_DATABASE));
+    let bind: SocketAddr = "127.0.0.1:0"
+        .parse()
+        .expect("literal loopback address is valid");
+    info!(
+        web_dir = %web_dir.display(),
+        database = %database.display(),
+        "starting FlightTrace GUI",
+    );
+    run_serve(
+        bind,
+        &database,
+        None,
+        DEFAULT_DIALECT,
+        None,
+        Some(web_dir),
+        true,
+        true,
+    )
+}
+
+const GUI_DEFAULT_DATABASE: &str = "./data/flighttrace.db";
+const DEFAULT_DIALECT: &str = "common";
+
+/// Resolve a `web-dist` directory for the GUI launch flow. Priority:
+///
+/// 1. `FLIGHTTRACE_WEB_DIR` env var.
+/// 2. `./web-dist` in the current working directory.
+/// 3. `<exe-dir>/web-dist` — the release-archive shape.
+/// 4. `./web/dist` — repo checkouts.
+///
+/// Missing → returns the single actionable-message error documented in
+/// `docs/issues/13-gui-default-packaged-binary.md`.
+fn resolve_gui_web_dir() -> Result<PathBuf> {
+    let env_override = std::env::var_os("FLIGHTTRACE_WEB_DIR").map(PathBuf::from);
+    let cwd = std::env::current_dir().ok();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(PathBuf::from));
+    resolve_gui_web_dir_with(env_override, cwd, exe_dir)
+}
+
+/// Pure form of [`resolve_gui_web_dir`] with the environment injected —
+/// makes the priority chain unit-testable with temp directories.
+fn resolve_gui_web_dir_with(
+    env_override: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+    exe_dir: Option<PathBuf>,
+) -> Result<PathBuf> {
+    let mut attempted: Vec<(String, PathBuf)> = Vec::new();
+
+    if let Some(path) = env_override {
+        if is_valid_web_dir(&path) {
+            return Ok(path);
+        }
+        attempted.push(("$FLIGHTTRACE_WEB_DIR".into(), path));
+    } else {
+        attempted.push(("$FLIGHTTRACE_WEB_DIR".into(), PathBuf::from("(unset)")));
+    }
+
+    if let Some(cwd) = cwd.as_ref() {
+        let p = cwd.join("web-dist");
+        if is_valid_web_dir(&p) {
+            return Ok(p);
+        }
+        attempted.push(("./web-dist".into(), p));
+
+        let p = cwd.join("web").join("dist");
+        if is_valid_web_dir(&p) {
+            return Ok(p);
+        }
+        // Second CWD candidate pushed after the exe-dir one below so the
+        // final list reads in the priority order documented above.
+    }
+
+    if let Some(exe) = exe_dir.as_ref() {
+        let p = exe.join("web-dist");
+        if is_valid_web_dir(&p) {
+            return Ok(p);
+        }
+        attempted.push(("<exe-dir>/web-dist".into(), p));
+    }
+
+    if let Some(cwd) = cwd.as_ref() {
+        let p = cwd.join("web").join("dist");
+        if is_valid_web_dir(&p) {
+            return Ok(p);
+        }
+        attempted.push(("./web/dist".into(), p));
+    }
+
+    let tried = attempted
+        .iter()
+        .enumerate()
+        .map(|(i, (label, path))| format!("  {}. {label} ({})", i + 1, path.display()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Err(anyhow!(
+        "No web UI found. Place web-dist next to the binary, set \
+         FLIGHTTRACE_WEB_DIR, or run `flighttrace serve` for API-only mode.\n\
+         \n\
+         Tried:\n{tried}",
+    ))
+}
+
+fn is_valid_web_dir(dir: &Path) -> bool {
+    dir.is_dir() && dir.join("index.html").is_file()
+}
+
+// Serve has always taken one argument per CLI flag; issue 13 added one more
+// for the stdout URL announce. Bundling them into a struct would just
+// invert cost (define the struct at every call site instead of listing
+// args) and this is a private single-caller-per-mode function.
+#[allow(clippy::too_many_arguments)]
 fn run_serve(
     bind: SocketAddr,
     database: &Path,
@@ -138,6 +280,7 @@ fn run_serve(
     mission_path: Option<&Path>,
     web_dir: Option<PathBuf>,
     open_browser: bool,
+    announce_stdout: bool,
 ) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -205,6 +348,13 @@ fn run_serve(
             info!(%local, web_dir = %dir.display(), "FlightTrace API listening + serving UI");
         } else {
             info!(%local, "FlightTrace API listening");
+        }
+
+        // The GUI path picks a random port, so print the bound URL to
+        // stdout — that's the single line the user needs to open the app.
+        // Tracing goes to stderr; keep stdout a clean surface.
+        if announce_stdout {
+            println!("FlightTrace UI: http://{local}/");
         }
 
         if open_browser {
@@ -432,7 +582,7 @@ mod tests {
     fn parse_serve(args: &[&str]) -> ServeConfig {
         let cli = Cli::try_parse_from(args).expect("serve arguments should parse");
         match cli.command {
-            Command::Serve {
+            Some(Command::Serve {
                 bind,
                 database,
                 mavlink,
@@ -440,7 +590,7 @@ mod tests {
                 mission,
                 web_dir,
                 open,
-            } => (
+            }) => (
                 bind,
                 database,
                 mavlink,
@@ -449,7 +599,7 @@ mod tests {
                 web_dir,
                 open,
             ),
-            Command::Demo => panic!("expected serve command"),
+            other => panic!("expected serve command, got {other:?}"),
         }
     }
 
@@ -562,5 +712,162 @@ mod tests {
         // absent (no way to explicitly say "off" without --open=false, and
         // clap treats a bare --open as true).
         assert!(config.6);
+    }
+
+    // -------- issue 13: GUI-by-default packaged binary --------
+
+    #[test]
+    fn no_arguments_parse_as_default_gui() {
+        let cli = Cli::try_parse_from(["flighttrace"]).expect("bare invocation parses");
+        assert!(
+            cli.command.is_none(),
+            "expected no subcommand, got {:?}",
+            cli.command
+        );
+    }
+
+    #[test]
+    fn explicit_gui_subcommand_parses() {
+        let cli = Cli::try_parse_from(["flighttrace", "gui"]).expect("gui subcommand parses");
+        assert!(matches!(cli.command, Some(Command::Gui)));
+    }
+
+    #[test]
+    fn existing_demo_and_serve_subcommands_still_parse() {
+        let cli =
+            Cli::try_parse_from(["flighttrace", "demo"]).expect("demo subcommand still parses");
+        assert!(matches!(cli.command, Some(Command::Demo)));
+
+        // Existing full-form serve invocation must be unaffected.
+        let _lock = ENV_LOCK.lock().expect("environment test lock");
+        let _env = EnvGuard::cleared();
+        let cfg = parse_serve(&[
+            "flighttrace",
+            "serve",
+            "--bind",
+            "127.0.0.1:8080",
+            "--database",
+            "./data/flighttrace.db",
+        ]);
+        assert_eq!(cfg.0, "127.0.0.1:8080".parse().unwrap());
+        assert_eq!(cfg.1, PathBuf::from("./data/flighttrace.db"));
+    }
+
+    #[test]
+    fn help_and_version_short_circuit_without_starting_server() {
+        // clap returns a DisplayHelp / DisplayVersion "error" that renders on
+        // stdout and short-circuits the run — verifying the kind is enough.
+        let err = Cli::try_parse_from(["flighttrace", "--help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+
+        let err = Cli::try_parse_from(["flighttrace", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    fn scratch_dir() -> PathBuf {
+        let path = std::env::temp_dir().join(format!("flighttrace-gui-test-{}", uuid_stub()));
+        std::fs::create_dir_all(&path).expect("create scratch dir");
+        path
+    }
+
+    fn uuid_stub() -> String {
+        // Avoid pulling in the uuid crate just for tests. Pids collide across
+        // parallel test runs but we combine with a monotonic counter for
+        // uniqueness within a process.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        format!(
+            "{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        )
+    }
+
+    struct DirGuard(PathBuf);
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn make_valid_web_dir(root: &Path, sub: &str) -> PathBuf {
+        let dir = root.join(sub);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::write(dir.join("index.html"), "<!doctype html>").expect("write index");
+        dir
+    }
+
+    #[test]
+    fn gui_web_dir_prefers_env_var_when_valid() {
+        let root = scratch_dir();
+        let _guard = DirGuard(root.clone());
+        let env_dir = make_valid_web_dir(&root, "env");
+        let cwd_dir = make_valid_web_dir(&root, "web-dist");
+        let resolved = resolve_gui_web_dir_with(Some(env_dir.clone()), Some(root.clone()), None)
+            .expect("env override wins");
+        assert_eq!(resolved, env_dir);
+        // Sanity: with the env override removed, the CWD candidate takes over.
+        let fallback = resolve_gui_web_dir_with(None, Some(root.clone()), None)
+            .expect("cwd/web-dist fallback");
+        assert_eq!(fallback, cwd_dir);
+    }
+
+    #[test]
+    fn gui_web_dir_falls_back_to_exe_dir() {
+        let root = scratch_dir();
+        let _guard = DirGuard(root.clone());
+        // CWD has no web-dist so the second candidate (cwd/web-dist) misses.
+        let cwd_only = root.join("no-web-here");
+        std::fs::create_dir_all(&cwd_only).expect("mkdir cwd");
+        // Exe dir sits at `root`, so <exe-dir>/web-dist = root/web-dist. Populate.
+        let exe_web = make_valid_web_dir(&root, "web-dist");
+        let resolved = resolve_gui_web_dir_with(None, Some(cwd_only), Some(root.clone()))
+            .expect("exe-dir candidate hits");
+        assert_eq!(resolved, exe_web);
+    }
+
+    #[test]
+    fn gui_web_dir_falls_back_to_repo_web_dist() {
+        let root = scratch_dir();
+        let _guard = DirGuard(root.clone());
+        let web_dist = make_valid_web_dir(&root, "web/dist");
+        let resolved =
+            resolve_gui_web_dir_with(None, Some(root.clone()), None).expect("repo dev fallback");
+        assert_eq!(resolved, web_dist);
+    }
+
+    #[test]
+    fn gui_web_dir_missing_returns_actionable_error() {
+        let root = scratch_dir();
+        let _guard = DirGuard(root.clone());
+        // Nothing valid anywhere.
+        let err = resolve_gui_web_dir_with(None, Some(root.clone()), Some(root.clone()))
+            .expect_err("no candidate should succeed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("No web UI found"), "message = {msg}");
+        assert!(msg.contains("FLIGHTTRACE_WEB_DIR"), "message = {msg}");
+        assert!(msg.contains("flighttrace serve"), "message = {msg}");
+        // Every candidate must be enumerated in the diagnostic.
+        for expected in [
+            "$FLIGHTTRACE_WEB_DIR",
+            "./web-dist",
+            "<exe-dir>/web-dist",
+            "./web/dist",
+        ] {
+            assert!(
+                msg.contains(expected),
+                "expected {expected} in diagnostic:\n{msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_valid_web_dir_requires_index_html() {
+        let root = scratch_dir();
+        let _guard = DirGuard(root.clone());
+        assert!(!is_valid_web_dir(&root), "empty dir isn't valid");
+        assert!(!is_valid_web_dir(&root.join("does-not-exist")));
+        let good = make_valid_web_dir(&root, "good");
+        assert!(is_valid_web_dir(&good));
     }
 }

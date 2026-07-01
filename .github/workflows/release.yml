@@ -130,6 +130,9 @@ jobs:
             "dist/$package/flighttrace.exe"
           Copy-Item README.md,LICENSE-MIT,LICENSE-APACHE "dist/$package/"
           Copy-Item -Recurse web/dist "dist/$package/web-dist"
+          # Double-click launcher: runs flighttrace.exe with no args (GUI
+          # mode) and keeps the terminal open so users see the URL / errors.
+          Copy-Item assets/start-flighttrace.bat "dist/$package/start-flighttrace.bat"
           Compress-Archive -Path "dist/$package" -DestinationPath "dist/$package.zip"
 
       - name: Upload release artifacts

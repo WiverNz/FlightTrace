@@ -1,14 +1,16 @@
 # Run modes
 
-FlightTrace supports four run modes. The [top-level
+FlightTrace supports five run modes. The [top-level
 README](../README.md) uses the **packaged web** mode as its primary
-quickstart because it's the fastest way to see a rendered
-`TAKEOFF_TIMEOUT` failure report. Use this document to pick the mode
-that fits your task.
+developer quickstart because it's the fastest way to see a rendered
+`TAKEOFF_TIMEOUT` failure report. End users on a downloaded release
+archive get the **downloaded release** mode without touching a
+subcommand. Use this document to pick the mode that fits your task.
 
 | Mode | Command shape | Best for |
 | --- | --- | --- |
-| **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | Demoing the product to someone; screenshots; one-process evaluation. |
+| **Downloaded release** | `./flighttrace` · `.\flighttrace.exe` · `start-flighttrace.bat` | End users. Auto-detects `web-dist/`, prints the URL, opens a browser. |
+| **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | Demoing the product from a checkout; screenshots; one-process evaluation. |
 | **Desktop (Tauri v2)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | A native window; same UI, no separate browser. |
 | **Dev (two processes)** | `cargo run … serve` + `npm run dev` | Iterating on the frontend with HMR. |
 | **CLI, API-only** | `flighttrace serve` | Backend dev; `curl`-driven exploration. |
@@ -18,7 +20,43 @@ same SQLite schema. The frontend uses same-origin fetches when
 `VITE_API_BASE_URL` is unset (packaged + desktop), falling back to the
 value in `web/.env.development` (dev mode).
 
-## Packaged web (primary)
+## Downloaded release (end-user default)
+
+Extract the archive, then run the binary bare. No arguments, no
+subcommand.
+
+```bash
+# Linux / macOS
+./flighttrace
+
+# Windows — either double-click the launcher…
+start-flighttrace.bat
+# …or run the binary directly in Command Prompt or PowerShell:
+.\flighttrace.exe
+```
+
+The binary resolves `web-dist/` in this order (see
+[`crates/flighttrace-cli/src/main.rs`](../crates/flighttrace-cli/src/main.rs)
+`resolve_gui_web_dir` for the code):
+
+1. `FLIGHTTRACE_WEB_DIR` env var.
+2. `./web-dist` in the current working directory.
+3. `<exe-dir>/web-dist` — how release archives are laid out.
+4. `./web/dist` — repo checkouts.
+
+On a hit, the binary binds `127.0.0.1:0` (a free loopback port),
+prints `FlightTrace UI: http://127.0.0.1:<port>/`, and opens the
+default browser. SQLite lands at `./data/flighttrace.db` (override
+with `FLIGHTTRACE_DATABASE`).
+
+Missing `web-dist/` exits non-zero with a single-sentence actionable
+error: *"No web UI found. Place web-dist next to the binary, set
+FLIGHTTRACE_WEB_DIR, or run `flighttrace serve` for API-only mode."*
+No silent no-op, no help wall.
+
+`flighttrace gui` is available as an explicit equivalent for scripts.
+
+## Packaged web (primary developer path)
 
 One process serves both the API and the prebuilt SPA.
 

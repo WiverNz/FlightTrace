@@ -74,10 +74,20 @@ whole pipeline works.
 
 | Mode | Command shape | Best for |
 | --- | --- | --- |
-| **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | The command above; one-process demo. |
+| **Downloaded release** | Windows: double-click `start-flighttrace.bat` or `.\flighttrace.exe`. Linux/macOS: `./flighttrace`. | End users. Auto-detects `web-dist/`, opens the default browser. |
+| **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | Developer packaged evaluation from a checkout. |
 | **Desktop (Tauri v2)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window; see [`docs/desktop.md`](docs/desktop.md). |
 | **Dev (two processes)** | `cargo run … serve` + `npm run dev` | Frontend iteration with HMR. |
 | **CLI, API-only** | `flighttrace serve` | Backend dev; `curl`-driven. |
+
+The first row is what a user gets from an extracted release archive.
+No arguments, no help wall — the binary detects `web-dist/` sitting
+next to it, binds a random loopback port, prints
+`FlightTrace UI: http://127.0.0.1:<port>/`, and opens the browser.
+Missing `web-dist/` produces a single-sentence actionable error
+instead of a silent no-op. Run `flighttrace --help` for the full
+subcommand list; `flighttrace serve` remains the way to get an
+API-only or fully-flag-configured server.
 
 Full explanations in [`docs/run-modes.md`](docs/run-modes.md). Every
 `serve` flag also reads a matching `FLIGHTTRACE_*` env var — the full
