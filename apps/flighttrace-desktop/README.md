@@ -8,7 +8,17 @@ for the full spec, and the top-level [`README.md`](../../README.md#run-modes)
 for run-mode context.
 
 Not a workspace member — Tauri's Linux link-time deps (`webkit2gtk`,
-GTK, glib, appindicator) are opt-in. Build from inside `src-tauri/`:
+GTK, glib, appindicator) are opt-in.
+
+**Build `web/dist` first.** `tauri.conf.json` declares `../../../web/dist`
+as a `bundle.resources` entry, and `tauri-build`'s build script fails at
+`cargo check` time if that path is missing. From the repo root:
+
+```bash
+cd web && npm ci && npm run build && cd ..
+```
+
+Then build from inside `src-tauri/`:
 
 ```bash
 cd apps/flighttrace-desktop/src-tauri
