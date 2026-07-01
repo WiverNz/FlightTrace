@@ -352,13 +352,24 @@ fn sqlite_url_for(path: &Path) -> String {
     }
 }
 
-/// WSL2 doesn't expose `/dev/dri`, so webkit2gtk's GPU-accelerated paths
-/// (DMA-BUF renderer, ZINK on Mesa) fail their probe and log
-/// `libEGL warning: failed to get driver name for fd -1`,
-/// `MESA-LOADER: failed to retrieve device information`, or
-/// `ZINK: failed to choose pdev` before falling back to software rendering.
-/// The warnings look alarming but the app works fine — silence them by
-/// pre-setting the two WebKit env vars WSL2 users would set manually.
+/// WSL2 doesn't expose `/dev/dri`, so Mesa's DRI2/EGL loader and
+/// webkit2gtk's GPU-accelerated paths both fail their probe and log
+/// noisy lines like `libEGL warning: failed to get driver name for
+/// fd -1`, `MESA-LOADER: failed to retrieve device information`,
+/// `ZINK: failed to choose pdev`, and `egl: failed to create dri2
+/// screen` before falling back to software rendering. The warnings
+/// look alarming but the app works fine — silence them by pre-setting
+/// three env vars WSL2 users would set manually:
+///
+/// * `LIBGL_ALWAYS_SOFTWARE=1` — Mesa skips hardware driver probing
+///   entirely and goes straight to swrast/llvmpipe. This is the one
+///   that silences the Mesa/libEGL lines above; without it, the
+///   `WEBKIT_*` vars only avoid the *use* of DMA-BUF after Mesa has
+///   already probed and complained.
+/// * `WEBKIT_DISABLE_DMABUF_RENDERER=1` — WebKit uses the
+///   texture-upload path instead of DMA-BUF.
+/// * `WEBKIT_DISABLE_COMPOSITING_MODE=1` — WebKit uses non-accelerated
+///   compositing.
 ///
 /// Only fires on Linux and only when the user hasn't already set the
 /// variables, so native Linux hosts with real GPUs keep hardware
@@ -372,6 +383,7 @@ fn silence_wsl2_gpu_warnings() {
         // SAFETY: set before any threads are spawned; `env::set_var`
         // races only across threads, not against single-threaded startup.
         for (name, value) in [
+            ("LIBGL_ALWAYS_SOFTWARE", "1"),
             ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
             ("WEBKIT_DISABLE_COMPOSITING_MODE", "1"),
         ] {
@@ -388,9 +400,7 @@ fn silence_wsl2_gpu_warnings() {
 fn is_wsl2() -> bool {
     // Both markers are reliable: WSLg/WSL2 exports these, and the WSL2
     // kernel injects "microsoft" (or "WSL2") into /proc/version.
-    if std::env::var_os("WSL_DISTRO_NAME").is_some()
-        || std::env::var_os("WSL_INTEROP").is_some()
-    {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
         return true;
     }
     std::fs::read_to_string("/proc/version")
