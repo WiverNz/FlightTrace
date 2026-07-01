@@ -36,6 +36,20 @@ use tracing_subscriber::EnvFilter;
 use flighttrace_api::{AppState, build_with_static};
 use flighttrace_storage::connect;
 
+/// Compile-time application version, sourced from the desktop crate's
+/// `Cargo.toml`. `scripts/release.sh` bumps that file in lockstep with
+/// the workspace + tauri.conf.json versions, so all three stay aligned.
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Tauri command exposed to the WebView. The React frontend already has
+/// the version via `GET /health` (which works in both packaged CLI and
+/// desktop modes), so this is a small convenience for code paths that
+/// prefer synchronous IPC over an HTTP round-trip.
+#[tauri::command]
+fn get_app_version() -> &'static str {
+    APP_VERSION
+}
+
 fn main() -> Result<()> {
     init_tracing();
 
@@ -82,13 +96,14 @@ fn main() -> Result<()> {
                 "main",
                 tauri::WebviewUrl::External(parsed),
             )
-            .title("FlightTrace")
+            .title(format!("FlightTrace v{APP_VERSION}"))
             .inner_size(1280.0, 800.0)
             .min_inner_size(960.0, 600.0)
             .resizable(true)
             .build()?;
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![get_app_version])
         .on_window_event(move |_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let _ = close_shutdown_tx.send(true);

@@ -36,6 +36,9 @@ cargo_toml="Cargo.toml"
 cargo_lock="Cargo.lock"
 web_package="web/package.json"
 web_lock="web/package-lock.json"
+desktop_cargo_toml="apps/flighttrace-desktop/src-tauri/Cargo.toml"
+desktop_cargo_lock="apps/flighttrace-desktop/src-tauri/Cargo.lock"
+desktop_tauri_conf="apps/flighttrace-desktop/src-tauri/tauri.conf.json"
 
 # ---------- argument parsing ----------
 
@@ -165,9 +168,56 @@ write_workspace_version() {
   mv "$temporary" "$cargo_toml"
 }
 
+# Desktop crate is excluded from the workspace (see apps/flighttrace-desktop
+# README + docs/issues/09), so its Cargo.toml carries a standalone
+# `version = "..."` line under `[package]`. Bump it in lockstep.
+write_desktop_cargo_version() {
+  local new="$1"
+  local temporary
+  temporary="$(mktemp "${desktop_cargo_toml}.XXXXXX")"
+  awk -v new="$new" '
+    BEGIN { in_section = 0; replaced = 0 }
+    /^\[package\]/ { in_section = 1; print; next }
+    /^\[/          { in_section = 0 }
+    {
+      if (in_section && !replaced && $0 ~ /^version *= *"/) {
+        print "version = \"" new "\""
+        replaced = 1
+      } else {
+        print
+      }
+    }
+    END {
+      if (!replaced) exit 1
+    }
+  ' "$desktop_cargo_toml" > "$temporary" || {
+    rm -f "$temporary"
+    die "could not update [package].version in $desktop_cargo_toml"
+  }
+  mv "$temporary" "$desktop_cargo_toml"
+}
+
+# tauri.conf.json's top-level `"version"` field. Uses a small Python
+# oneliner because sed on JSON is error-prone.
+write_tauri_conf_version() {
+  local new="$1"
+  python3 - "$desktop_tauri_conf" "$new" <<'PY'
+import json, sys
+path, new = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+data["version"] = new
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+}
+
 write_versions() {
   local new="$1"
   write_workspace_version "$new"
+  write_desktop_cargo_version "$new"
+  write_tauri_conf_version "$new"
   npm --prefix web version "$new" --no-git-tag-version --allow-same-version >/dev/null
 }
 
@@ -182,6 +232,23 @@ valid_semver "$current" || die "current version is not valid SemVer: $current"
 current_web="$(web_version)"
 [[ "$current_web" == "$current" ]] \
   || die "$web_package version ($current_web) does not match workspace version ($current)"
+
+# Desktop crate has its own [package] version (excluded from workspace).
+current_desktop_cargo="$(awk '
+  /^\[package\]/ { in_section = 1; next }
+  /^\[/          { in_section = 0 }
+  in_section && /^version *= *"/ {
+    match($0, /"[^"]*"/)
+    print substr($0, RSTART + 1, RLENGTH - 2)
+    exit
+  }
+' "$desktop_cargo_toml")"
+[[ "$current_desktop_cargo" == "$current" ]] \
+  || die "$desktop_cargo_toml version ($current_desktop_cargo) does not match workspace version ($current)"
+
+current_tauri="$(python3 -c "import json,sys; print(json.load(open('$desktop_tauri_conf'))['version'])")"
+[[ "$current_tauri" == "$current" ]] \
+  || die "$desktop_tauri_conf version ($current_tauri) does not match workspace version ($current)"
 
 case "${version_spec:-patch}" in
   patch|minor|major)
@@ -207,6 +274,9 @@ Plan:
   new version     : $new
   files to update : $cargo_toml
                     $cargo_lock
+                    $desktop_cargo_toml
+                    $desktop_cargo_lock (if it exists)
+                    $desktop_tauri_conf
                     $web_package
                     $web_lock
   tag             : v$new
@@ -231,11 +301,23 @@ write_versions "$new"
 echo "→ cargo check --workspace (refreshes Cargo.lock)"
 cargo check --workspace --quiet
 
-git --no-pager diff --stat -- \
-  "$cargo_toml" "$cargo_lock" "$web_package" "$web_lock"
+# Refresh the desktop crate's Cargo.lock too if it exists (only present
+# when someone has already run `cargo build` inside src-tauri/).
+if [[ -f "$desktop_cargo_lock" ]]; then
+  echo "→ cargo check (desktop crate, refreshes its Cargo.lock)"
+  (cd apps/flighttrace-desktop/src-tauri && cargo check --quiet) || \
+    echo "warning: desktop cargo check failed — Cargo.lock may be stale until the next build" >&2
+fi
+
+# Only stage files that actually exist so a first-time desktop-lock
+# absence doesn't break the commit.
+staged=("$cargo_toml" "$cargo_lock" "$desktop_cargo_toml" "$desktop_tauri_conf" "$web_package" "$web_lock")
+[[ -f "$desktop_cargo_lock" ]] && staged+=("$desktop_cargo_lock")
+
+git --no-pager diff --stat -- "${staged[@]}"
 echo
 
-git add -- "$cargo_toml" "$cargo_lock" "$web_package" "$web_lock"
+git add -- "${staged[@]}"
 git commit -m "Release v$new" >/dev/null
 echo "→ committed: $(git rev-parse --short HEAD)  Release v$new"
 

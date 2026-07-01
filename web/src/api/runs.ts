@@ -46,3 +46,9 @@ export function getFailureReport(
 export function createDemoRun(): Promise<{ id: string }> {
   return request<{ id: string }>('/api/demo/run', { method: 'POST' });
 }
+
+export function getHealth(
+  signal?: AbortSignal,
+): Promise<{ status: string; version: string }> {
+  return request<{ status: string; version: string }>('/health', { signal });
+}
