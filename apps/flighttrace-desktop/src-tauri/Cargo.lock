@@ -912,7 +912,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-api"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "axum",
  "flighttrace-assertions",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-assertions"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "flighttrace-core",
  "serde",
@@ -945,7 +945,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -955,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-demo"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "flighttrace-assertions",
  "flighttrace-core",
@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-desktop"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "flighttrace-storage"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "flighttrace-core",
  "serde",
