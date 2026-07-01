@@ -18,6 +18,9 @@
     "icon": ["icons/icon.png"],
     "category": "DeveloperTool",
     "shortDescription": "FlightTrace mission debugger",
-    "longDescription": "Local-first debugger for PX4/ArduPilot missions."
+    "longDescription": "Local-first debugger for PX4/ArduPilot missions.",
+    "resources": {
+      "../../../web/dist": "web-dist"
+    }
   }
 }

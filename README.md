@@ -202,11 +202,30 @@ cargo tauri dev
 
 The shell binds Axum on `127.0.0.1:0` (a free loopback port) and points
 the WebView at that URL. Closing the window flips a graceful-shutdown
-watch and the process exits within a fraction of a second. SQLite lives
-at `./data/flighttrace-desktop.db` by default; set `FLIGHTTRACE_DATABASE`
-to override. Set `FLIGHTTRACE_WEB_DIR` if you move the binary away from
-the repo checkout — v0.1 doesn't auto-bundle `web/dist` into the Tauri
-build yet.
+watch and the process exits within a fraction of a second.
+
+**Web assets** are resolved in this order (first match wins):
+
+1. `FLIGHTTRACE_WEB_DIR` env var.
+2. `<Tauri resource-dir>/web-dist` — where `cargo tauri build` drops the
+   SPA (declared in `apps/flighttrace-desktop/src-tauri/tauri.conf.json`
+   `bundle.resources`).
+3. `<Tauri resource-dir>/_up_/web-dist` and `.../web/dist` (alternative
+   bundler layouts).
+4. `<exe dir>/web-dist` — drop `web-dist/` next to a portable binary.
+5. `<repo>/web/dist` via `CARGO_MANIFEST_DIR` — how `cargo tauri dev`
+   from a checkout finds them.
+
+If none work, the shell exits with a numbered list of every path it
+tried and the recommended fix (`npm run build`, set
+`FLIGHTTRACE_WEB_DIR`, or drop `web-dist/` next to the binary). No
+blank window.
+
+**SQLite** lives at the platform's app-data dir by default —
+`~/.local/share/com.flighttrace.desktop/flighttrace-desktop.db` on
+Linux, `~/Library/Application Support/com.flighttrace.desktop/…` on
+macOS, `%APPDATA%\com.flighttrace.desktop\…` on Windows. Override with
+`FLIGHTTRACE_DATABASE`.
 
 The desktop crate is intentionally **not** a workspace member: on Linux
 it needs webkit2gtk + GTK + libglib link-time deps that aren't required
