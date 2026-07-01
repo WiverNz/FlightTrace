@@ -46,6 +46,24 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "CLI: serve packaged (web-dir + open)",
+      "preLaunchTask": "web: build (prod)",
+      "cargo": {
+        "args": ["build", "--package=flighttrace-cli", "--bin=flighttrace"],
+        "filter": { "name": "flighttrace", "kind": "bin" }
+      },
+      "args": [
+        "serve",
+        "--web-dir",
+        "${workspaceFolder}/web/dist",
+        "--open"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Tests: workspace",
       "cargo": {
         "args": ["test", "--workspace", "--no-run"],
@@ -88,6 +106,14 @@
       "webRoot": "${workspaceFolder}/web",
       "sourceMaps": true,
       "preLaunchTask": "web: vite dev"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Web: Chrome against packaged backend",
+      "url": "http://127.0.0.1:8088/",
+      "webRoot": "${workspaceFolder}/web",
+      "sourceMaps": true
     }
   ],
   "inputs": [

@@ -22,6 +22,16 @@
           "endsPattern": "Local:.*5173.*"
         }
       }
+    },
+    {
+      "label": "web: build (prod)",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/web"
+      },
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
     }
   ]
 }
