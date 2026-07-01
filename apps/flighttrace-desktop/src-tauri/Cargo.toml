@@ -1,6 +1,6 @@
 [package]
 name = "flighttrace-desktop"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "FlightTrace Tauri desktop shell — a thin native window around the same Axum server and React bundle the CLI serves."
