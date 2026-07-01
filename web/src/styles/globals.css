@@ -79,8 +79,21 @@ code,
 
 .app-header .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-3);
+}
+
+.app-header .brand .logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+[data-theme='dark'] .app-header .brand .logo {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .app-header .brand-sub {

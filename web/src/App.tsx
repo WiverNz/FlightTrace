@@ -7,6 +7,13 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <div className="brand">
+          <img
+            className="logo"
+            src="/icon.png"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+          />
           <Link to="/">
             <h1>FlightTrace</h1>
           </Link>
