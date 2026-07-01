@@ -167,9 +167,9 @@ export function AltitudeChart({
               y2={yAt(target)}
             />
             <text
-              x={layout.width - layout.padRight}
+              x={layout.padLeft + 4}
               y={yAt(target) - 4}
-              textAnchor="end"
+              textAnchor="start"
               className="altitude-chart-target-label"
             >
               target {fmtNumber(target, 1)} m
@@ -177,23 +177,40 @@ export function AltitudeChart({
           </g>
         )}
 
-        {validMarkers.map((m, i) => (
-          <g key={`${m.tone}-${i}`} className={`altitude-chart-marker ${m.tone}`}>
-            <line
-              x1={xAt(m.tMs)}
-              x2={xAt(m.tMs)}
-              y1={layout.padTop}
-              y2={layout.height - layout.padBottom}
-            />
-            <text
-              x={xAt(m.tMs) + 4}
-              y={layout.padTop + 10}
-              className="altitude-chart-marker-label"
-            >
-              {m.label}
-            </text>
-          </g>
-        ))}
+        {validMarkers.map((m, i) => {
+          // Two rules for label placement:
+          //  1. Different tones live at different vertical bands so a
+          //     STATUSTEXT (warn) and a FAILED (fail) marker close in time
+          //     never fight for the same pixels. warn → bottom, fail → top,
+          //     everything else → below the previous run.
+          //  2. Labels flip anchor when the marker sits near the right edge
+          //     so text doesn't clip out of the chart.
+          const nearRight = xAt(m.tMs) > layout.width - layout.padRight - 90;
+          const anchor = nearRight ? 'end' : 'start';
+          const xLabel = xAt(m.tMs) + (nearRight ? -4 : 4);
+          const yLabel =
+            m.tone === 'fail'
+              ? layout.padTop + 10
+              : layout.height - layout.padBottom - 6;
+          return (
+            <g key={`${m.tone}-${i}`} className={`altitude-chart-marker ${m.tone}`}>
+              <line
+                x1={xAt(m.tMs)}
+                x2={xAt(m.tMs)}
+                y1={layout.padTop}
+                y2={layout.height - layout.padBottom}
+              />
+              <text
+                x={xLabel}
+                y={yLabel}
+                textAnchor={anchor}
+                className="altitude-chart-marker-label"
+              >
+                {m.label}
+              </text>
+            </g>
+          );
+        })}
 
         <line
           x1={layout.padLeft}

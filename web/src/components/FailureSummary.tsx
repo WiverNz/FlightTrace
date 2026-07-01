@@ -47,13 +47,23 @@ export function FailureSummary({
     targetAltitude != null && actualAltitude != null
       ? Math.max(0, targetAltitude - actualAltitude)
       : null;
-  const failureAt = altitudeAssertion?.evaluatedAt ?? report.generatedAt;
-  const timeoutMs =
-    run && failureAt
-      ? Date.parse(failureAt) - Date.parse(run.startedAt)
-      : null;
-  const failureRelative =
-    run && failureAt ? formatRelativeTime(failureAt, run.startedAt) : null;
+  // Two distinct concepts, previously conflated in one "Failure time" tile:
+  //  - "Failed at": when the mission actually terminated (last phase, run.endedAt).
+  //  - "Timeout budget": how long the failing check waited before firing, i.e.
+  //    the step-window end minus the run start. The altitude check sets
+  //    evaluatedAt = window.end, so this is a straightforward subtraction.
+  const failedAtIso = run?.endedAt ?? null;
+  const failedAtRelative =
+    run && failedAtIso ? formatRelativeTime(failedAtIso, run.startedAt) : null;
+
+  const budgetIso = altitudeAssertion?.evaluatedAt ?? null;
+  const budgetMs =
+    run && budgetIso ? Date.parse(budgetIso) - Date.parse(run.startedAt) : null;
+
+  // Failure marker on the chart uses the actual mission end when we have
+  // one, otherwise falls back to the assertion's evaluation timestamp so
+  // there's always *something* pinned to the timeline.
+  const markerAt = failedAtIso ?? budgetIso;
   const statustextHit = findLastStatustext(events ?? [], report);
 
   const takeoffExplanation =
@@ -71,10 +81,10 @@ export function FailureSummary({
       tone: 'warn',
     });
   }
-  if (failureAt) {
+  if (markerAt) {
     markers.push({
-      at: failureAt,
-      label: `failure ${failureRelative ?? ''}`.trim(),
+      at: markerAt,
+      label: 'FAILED',
       tone: 'fail',
     });
   }
@@ -107,10 +117,15 @@ export function FailureSummary({
             tone={altitudeGap != null && altitudeGap > 0 ? 'actual' : undefined}
           />
           <Fact
-            label="Failure time"
+            label="Failed at"
+            value={failedAtRelative ?? '—'}
+            tone="actual"
+          />
+          <Fact
+            label="Timeout budget"
             value={
-              failureRelative && timeoutMs != null && timeoutMs >= 0
-                ? `${failureRelative} (${formatDurationMs(timeoutMs)})`
+              budgetMs != null && budgetMs >= 0
+                ? formatDurationMs(budgetMs)
                 : '—'
             }
           />
