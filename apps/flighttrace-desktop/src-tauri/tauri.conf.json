@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FlightTrace",
+  "version": "0.1.2",
+  "identifier": "com.flighttrace.desktop",
+  "build": {
+    "frontendDist": "../../../web/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"],
+    "category": "DeveloperTool",
+    "shortDescription": "FlightTrace mission debugger",
+    "longDescription": "Local-first debugger for PX4/ArduPilot missions."
+  }
+}

@@ -1,14 +1,16 @@
-// Single fetch wrapper. The base URL is read from VITE_API_BASE_URL here and
-// nowhere else.
+// Single fetch wrapper. The base URL comes from VITE_API_BASE_URL when set
+// (dev mode against a cross-origin API on `:8088`) and falls back to the
+// empty string — which makes fetches same-origin — when unset. The empty
+// case covers both the packaged CLI mode (`flighttrace serve --web-dir …`)
+// and the Tauri desktop shell, both of which host the SPA and the API on
+// the same origin.
 
 import type { ApiErrorBody } from '../types/api';
 
 const BASE_URL: string = (() => {
   const raw = import.meta.env.VITE_API_BASE_URL;
   if (typeof raw !== 'string' || raw.length === 0) {
-    throw new Error(
-      'VITE_API_BASE_URL is not set. Add it to web/.env.development.',
-    );
+    return '';
   }
   return raw.replace(/\/+$/, '');
 })();

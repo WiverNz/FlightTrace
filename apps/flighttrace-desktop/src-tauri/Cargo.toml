@@ -1,0 +1,32 @@
+[package]
+name = "flighttrace-desktop"
+version = "0.1.2"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "FlightTrace Tauri desktop shell — a thin native window around the same Axum server and React bundle the CLI serves."
+publish = false
+
+# Deliberately NOT part of the top-level workspace: Tauri drags in
+# GTK/webkit link-time deps on Linux that break `cargo test --workspace`
+# on machines without them installed. See docs/issues/08-tauri-desktop-shell.md.
+
+[[bin]]
+name = "flighttrace-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", default-features = false }
+
+[dependencies]
+# Trim Tauri's Linux defaults: tray-icon pulls libdbus-sys which needs
+# libdbus-1-dev at build time. The desktop shell doesn't use a tray,
+# so cut it and keep the system-dep surface smaller.
+tauri = { version = "2", default-features = false, features = ["wry"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "sync"] }
+axum = { version = "0.7", features = ["macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+anyhow = "1"
+
+flighttrace-api = { path = "../../../crates/flighttrace-api" }
+flighttrace-storage = { path = "../../../crates/flighttrace-storage" }

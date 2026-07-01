@@ -149,17 +149,22 @@ port `8080`. MAVLink and mission variables are commented out by default, so
 the `CLI: serve demo-only` profile remains demo-only; the MAVLink profile
 supplies them as CLI flags.
 
-### Run modes — dev vs. packaged
+### Run modes
 
-FlightTrace runs in two shapes:
+FlightTrace has three run modes; pick the one that fits the task.
 
-- **Dev mode (two processes).** `cargo run … serve` on `:8080` and
+- **CLI dev (two processes).** `cargo run … serve` on `:8080` and
   `npm run dev` on `:5173`. Best for frontend iteration; Vite's HMR is
-  live. This is the workflow used above.
-- **Packaged mode (one process).** Build the frontend once, then let
+  live. This is the workflow used in the demo quickstart above.
+- **CLI packaged (one process).** Build the frontend once, then let
   `flighttrace serve` also serve the bundle from the same origin. Best
   for evaluation, screenshots, and shipping a single binary alongside a
   `web-dist/` folder.
+- **Desktop (Tauri, one process).** A thin Tauri v2 shell that spawns
+  the same Axum server on a random loopback port and points a native
+  WebView at it. Same API, same React bundle — no Electron. See below.
+
+**CLI packaged mode**:
 
 ```bash
 # One-time frontend build.
@@ -178,7 +183,45 @@ once the listener binds — drop it in headless environments. Client-side
 routes like `/runs/<id>` fall back to `index.html`, so React Router
 still owns them; unknown `/api/*` paths still return the JSON 404
 envelope. When `--web-dir` is omitted the API-only behaviour is
-identical to previous releases.
+identical to previous releases. The frontend uses same-origin fetches
+in this mode — nothing to configure.
+
+**Desktop mode (Tauri):**
+
+```bash
+# One-time frontend build.
+cd web && npm ci && npm run build && cd ..
+
+# One-time tauri-cli install.
+cargo install tauri-cli --version '^2'
+
+# Native window with the FlightTrace UI.
+cd apps/flighttrace-desktop/src-tauri
+cargo tauri dev
+```
+
+The shell binds Axum on `127.0.0.1:0` (a free loopback port) and points
+the WebView at that URL. Closing the window flips a graceful-shutdown
+watch and the process exits within a fraction of a second. SQLite lives
+at `./data/flighttrace-desktop.db` by default; set `FLIGHTTRACE_DATABASE`
+to override. Set `FLIGHTTRACE_WEB_DIR` if you move the binary away from
+the repo checkout — v0.1 doesn't auto-bundle `web/dist` into the Tauri
+build yet.
+
+The desktop crate is intentionally **not** a workspace member: on Linux
+it needs webkit2gtk + GTK + libglib link-time deps that aren't required
+for the CLI. Install on Debian/Ubuntu:
+
+```bash
+sudo apt install \
+    libwebkit2gtk-4.1-dev libgtk-3-dev libglib2.0-dev \
+    libayatana-appindicator3-dev librsvg2-dev pkg-config \
+    build-essential curl wget file libssl-dev
+```
+
+macOS and Windows don't need extra system packages beyond the standard
+Tauri prerequisites — see [Tauri v2's prerequisites
+guide](https://v2.tauri.app/start/prerequisites/) for the current list.
 
 ## Quickstart — ArduPilot SITL
 

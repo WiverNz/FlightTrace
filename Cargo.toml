@@ -9,6 +9,10 @@ members = [
     "crates/flighttrace-assertions",
     "crates/flighttrace-cli",
 ]
+# The desktop shell links GTK/webkit at build time on Linux. Excluding it
+# keeps `cargo test --workspace` and CI running on machines without those
+# system deps installed. See docs/issues/08-tauri-desktop-shell.md.
+exclude = ["apps/flighttrace-desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.2"

@@ -64,6 +64,22 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Desktop: flighttrace-desktop (dev)",
+      "preLaunchTask": "web: build (prod)",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path=${workspaceFolder}/apps/flighttrace-desktop/src-tauri/Cargo.toml",
+          "--bin=flighttrace-desktop"
+        ],
+        "filter": { "name": "flighttrace-desktop", "kind": "bin" }
+      },
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Tests: workspace",
       "cargo": {
         "args": ["test", "--workspace", "--no-run"],

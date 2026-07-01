@@ -3,6 +3,11 @@
 /web/node_modules
 /web/dist
 
+# Tauri desktop shell: nested Cargo project outside the workspace has its own
+# target/ + generated schema files.
+/apps/flighttrace-desktop/src-tauri/target
+/apps/flighttrace-desktop/src-tauri/gen
+
 # Local env overrides (Vite + flighttrace CLI). `.env.example` is tracked.
 .env
 .env.*.local
