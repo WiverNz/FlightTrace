@@ -60,7 +60,7 @@ export function FailureSummary({
     report.reason === 'TAKEOFF_TIMEOUT' &&
     targetAltitude != null &&
     actualAltitude != null
-      ? `TAKEOFF_TIMEOUT happened because target altitude was ${targetAltitude.toFixed(1)} m, but the vehicle only reached ${actualAltitude.toFixed(1)} m and stopped climbing${statustextHit ? ` after “${statustextHit.text}”.` : '.'}`
+      ? `TAKEOFF_TIMEOUT happened because target altitude was ${targetAltitude.toFixed(1)} m, but the vehicle only reached ${actualAltitude.toFixed(1)} m and stopped climbing${statustextHit ? ` after ${statustextHit.text}` : ''}.`
       : report.summary;
 
   const markers: AltitudeChartMarker[] = [];

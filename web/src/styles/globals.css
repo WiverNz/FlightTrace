@@ -758,6 +758,14 @@ table.data th.mono {
   color: var(--danger);
 }
 
+.vspeed-stats dd.stalled {
+  color: var(--warning);
+}
+
+.vspeed-stats dd.ok {
+  color: var(--success);
+}
+
 .telemetry-table-wrap {
   max-height: 340px;
   overflow: auto;
