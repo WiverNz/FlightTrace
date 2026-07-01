@@ -129,42 +129,72 @@ Recommended:
 
 ### Color Palette
 
-Dark technical palette with high readability.
+Warm parchment / warm charcoal — never cold navy or pure white. Two
+themes; the header toggle in the app cycles `auto → light → dark`.
+See `web/src/styles/tokens.css` for the canonical values and
+`docs/issues/12-warm-design-system-and-theme.md` for context.
+
+**Light mode** (warm cream, terracotta accent):
 
 ```css
 :root {
-  --bg: #090d14;
-  --surface: #111722;
-  --surface-raised: #161d2a;
-  --border: #273244;
+  --bg: #fafaf8;
+  --bg-2: #f5f0e8;
+  --bg-3: #ede6d7;
 
-  --text: #e6edf7;
-  --text-muted: #9aa8bd;
-  --text-dim: #6f7d91;
+  --fg: #1a1816;
+  --fg-2: #5a554f;
+  --fg-3: #8b857d;
 
-  --accent: #6ea8fe;
-  --danger: #ff5c6c;
-  --warning: #f5c66b;
-  --success: #39d98a;
+  --accent: #c4553a;         /* terracotta */
+  --accent-strong: #a8442d;
+  --accent-2: #7a8a6f;       /* sage secondary */
+  --accent-2-strong: #5d6c54;
 
-  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --danger: #b0413e;
+  --warning: #c68b3a;
+  --success: #6f8a5f;
 }
 ```
 
-Status colors:
+**Dark mode** (warm charcoal, brighter terracotta):
 
 ```css
-.status-failed {
-  color: var(--danger);
-}
+[data-theme='dark'] {
+  --bg: #1a1816;
+  --bg-2: #25221f;
+  --bg-3: #2f2b27;
 
-.status-succeeded {
-  color: var(--success);
-}
+  --fg: #f0ebe3;
+  --fg-2: #c8bfb4;
+  --fg-3: #8f867b;
 
-.status-running {
-  color: var(--accent);
+  --accent: #e8734f;
+  --accent-strong: #ff8a66;
+  --accent-2: #9cb088;
+  --accent-2-strong: #b5c79f;
+
+  --danger: #e68062;
+  --warning: #e0a35c;
+  --success: #9cb088;
 }
+```
+
+Typography tokens (with system fallbacks — self-hosted Fraunces /
+Inter Tight / Inconsolata is a follow-up):
+
+```css
+--font-display: 'Fraunces', 'Source Serif Pro', Georgia, serif;
+--font-body:    'Inter Tight', 'Inter', system-ui, sans-serif;
+--font-mono:    'Inconsolata', ui-monospace, SFMono-Regular, Menlo, monospace;
+```
+
+Status colors map to semantic tokens:
+
+```css
+.status-failed    { color: var(--danger);  }
+.status-succeeded { color: var(--success); }
+.status-running   { color: var(--accent);  }
 ```
 
 ## Run Detail UI

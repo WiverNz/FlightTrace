@@ -3,8 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
     <title>FlightTrace — mission debugger</title>
+    <script>
+      // Pre-paint theme application. Mirrors src/theme/theme.ts —
+      // keep the STORAGE_KEY and value shape in lockstep. Runs
+      // synchronously before styles apply so there is no flash of
+      // the wrong theme on load.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('flighttrace-theme');
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.setAttribute('data-theme', stored);
+          }
+          // stored === 'system' or absent → leave data-theme unset so
+          // tokens.css's prefers-color-scheme fallback picks the theme
+          // and continues to track OS changes live.
+        } catch (_) {
+          /* localStorage unavailable — tokens.css handles the default. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

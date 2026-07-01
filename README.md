@@ -83,6 +83,11 @@ Full explanations in [`docs/run-modes.md`](docs/run-modes.md). Every
 `serve` flag also reads a matching `FLIGHTTRACE_*` env var — the full
 table lives in [`docs/configuration.md`](docs/configuration.md).
 
+The app-header toggle in the top-right cycles between `auto` (follows
+your OS preference), `light`, and `dark`. Your choice persists in
+`localStorage`. Both themes are warm — parchment/cream in light,
+warm charcoal in dark — never cold navy or pure white.
+
 ## Read-only guarantee
 
 FlightTrace **never** writes to the MAVLink socket. It does not arm,

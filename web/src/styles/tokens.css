@@ -1,37 +1,19 @@
+/* FlightTrace design tokens — warm parchment / warm charcoal palette.
+   Two themes, switched via `data-theme` on <html>. First-visit
+   default follows `prefers-color-scheme` when no attribute is set.
+   See docs/issues/12-warm-design-system-and-theme.md for context. */
+
 :root {
-  /* Palette — mirrors docs/tech-stack.md § Color Palette. */
-  --bg: #090d14;
-  --surface: #111722;
-  --surface-raised: #161d2a;
-  --surface-elevated: #1c2540;
-  --border: #273244;
-  --border-strong: #334156;
+  /* Typography. System-safe fallbacks first; upgrading to hosted
+     Fraunces / Inter Tight / Inconsolata is a follow-up. */
+  --font-display: 'Fraunces', 'Source Serif Pro', Georgia, 'Times New Roman',
+    serif;
+  --font-body: 'Inter Tight', 'Inter', system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Inconsolata', ui-monospace, SFMono-Regular, 'JetBrains Mono',
+    'IBM Plex Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
-  --text: #e6edf7;
-  --text-muted: #9aa8bd;
-  --text-dim: #6f7d91;
-  --link: #8ab4ff;
-  --neutral: #94a3b8;
-
-  --accent: #6ea8fe;
-  --danger: #ff5c6c;
-  --warning: #f5c66b;
-  --success: #39d98a;
-
-  /* Tinted backgrounds — same alpha, using the palette above. */
-  --accent-bg: rgba(110, 168, 254, 0.12);
-  --danger-bg: rgba(255, 92, 108, 0.12);
-  --warning-bg: rgba(245, 198, 107, 0.12);
-  --success-bg: rgba(57, 217, 138, 0.12);
-  --neutral-bg: rgba(148, 163, 184, 0.12);
-
-  /* Typography. */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', 'IBM Plex Mono',
-    Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-
-  /* Spacing scale. */
+  /* Rhythm. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -44,4 +26,104 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* Motion. Fast enough to feel snappy, slow enough to read. */
+  --transition-fast: 140ms ease;
+
+  /* Default palette = light. `[data-theme=dark]` overrides below.
+     `prefers-color-scheme: dark` also switches when no explicit
+     `data-theme` is set. */
+
+  --bg: #fafaf8;
+  --bg-2: #f5f0e8;
+  --bg-3: #ede6d7;
+
+  --fg: #1a1816;
+  --fg-2: #5a554f;
+  --fg-3: #8b857d;
+
+  --accent: #c4553a;
+  --accent-strong: #a8442d;
+  --accent-2: #7a8a6f;
+  --accent-2-strong: #5d6c54;
+
+  --danger: #b0413e;
+  --warning: #c68b3a;
+  --success: #6f8a5f;
+
+  --hl-bg: rgba(196, 85, 58, 0.1);
+  --danger-bg: rgba(176, 65, 62, 0.1);
+  --warning-bg: rgba(198, 139, 58, 0.1);
+  --success-bg: rgba(111, 138, 95, 0.12);
+  --neutral-bg: rgba(0, 0, 0, 0.06);
+
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  color-scheme: light;
+}
+
+/* Dark theme — warm charcoal, not cold navy. */
+[data-theme='dark'] {
+  --bg: #1a1816;
+  --bg-2: #25221f;
+  --bg-3: #2f2b27;
+
+  --fg: #f0ebe3;
+  --fg-2: #c8bfb4;
+  --fg-3: #8f867b;
+
+  --accent: #e8734f;
+  --accent-strong: #ff8a66;
+  --accent-2: #9cb088;
+  --accent-2-strong: #b5c79f;
+
+  --danger: #e68062;
+  --warning: #e0a35c;
+  --success: #9cb088;
+
+  --hl-bg: rgba(232, 115, 79, 0.14);
+  --danger-bg: rgba(230, 128, 98, 0.16);
+  --warning-bg: rgba(224, 163, 92, 0.14);
+  --success-bg: rgba(156, 176, 136, 0.16);
+  --neutral-bg: rgba(255, 255, 255, 0.06);
+
+  --border: rgba(255, 255, 255, 0.11);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  color-scheme: dark;
+}
+
+/* First-visit default: follow the OS when no data-theme is set. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #1a1816;
+    --bg-2: #25221f;
+    --bg-3: #2f2b27;
+
+    --fg: #f0ebe3;
+    --fg-2: #c8bfb4;
+    --fg-3: #8f867b;
+
+    --accent: #e8734f;
+    --accent-strong: #ff8a66;
+    --accent-2: #9cb088;
+    --accent-2-strong: #b5c79f;
+
+    --danger: #e68062;
+    --warning: #e0a35c;
+    --success: #9cb088;
+
+    --hl-bg: rgba(232, 115, 79, 0.14);
+    --danger-bg: rgba(230, 128, 98, 0.16);
+    --warning-bg: rgba(224, 163, 92, 0.14);
+    --success-bg: rgba(156, 176, 136, 0.16);
+    --neutral-bg: rgba(255, 255, 255, 0.06);
+
+    --border: rgba(255, 255, 255, 0.11);
+    --border-strong: rgba(255, 255, 255, 0.18);
+
+    color-scheme: dark;
+  }
 }
