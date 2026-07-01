@@ -4,376 +4,116 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 > **FlightTrace helps PX4/ArduPilot developers understand why
-> autonomous missions fail.** It records MAVLink telemetry, reconstructs
-> the mission timeline as normalized events, evaluates declarative YAML
-> assertions, and produces a structured failure report with cited
-> evidence — locally, on your machine, in one process.
+> autonomous missions fail.** Local-first, read-only on the vehicle,
+> and ships with a deterministic demo run so you can evaluate it
+> without installing PX4 or ArduPilot.
 
-**Read-only on the vehicle by construction.** The `flighttrace-mavlink`
-crate exposes no send function; an in-tree integration test greps the
-source on every build to guarantee it stays that way. FlightTrace never
-arms, never takes off, never changes modes, never uploads missions,
-never sends any command. See [§ Read-only guarantee](#read-only-guarantee)
-below.
+## Screenshots
 
-### Three ways to run it
+|  |  |
+| --- | --- |
+| **Runs list** — failed demo run at the top, `TAKEOFF_TIMEOUT` badge. | **Failure summary** — plain-English sentence, five fact tiles, altitude chart with target line + failure marker. |
+| ![Runs list](docs/screenshots/runs-list.png) | ![Failure summary](docs/screenshots/run-detail-failure-summary.png) |
+| **Telemetry overview** — altitude chart, vertical-speed panel, sample table. | **Desktop shell** — same UI in a Tauri v2 native window. |
+| ![Telemetry overview](docs/screenshots/run-detail-telemetry.png) | ![Desktop window](docs/screenshots/desktop-window.png) |
 
-| Mode | Command | Use when |
-| --- | --- | --- |
-| **CLI, API-only** | `flighttrace serve --bind 127.0.0.1:8080 --database ./data/flighttrace.db` | Backend dev; hit the API with `curl`. |
-| **CLI, packaged web** | `flighttrace serve --web-dir ./web/dist --open` | One-process demo in the browser after `npm run build`. |
-| **Desktop (Tauri)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window; same UI, no separate browser. |
+*These are palette-matched placeholders (~12 KB each). See
+[`docs/screenshots/README.md`](docs/screenshots/README.md) for the
+capture recipe.*
 
-Everything below unpacks these three modes and the demo scenario in
-detail. Start with [§ Quickstart — demo only](#quickstart--demo-only)
-for the fastest path to a rendered `TAKEOFF_TIMEOUT` failure report.
+## Why FlightTrace?
 
-## What FlightTrace is
+When an autonomous mission fails, the interesting question is *why*,
+not *what happened*. Log viewers show you the bytes; ground stations
+show you the plane. Neither one tells you "the vehicle only reached
+2.4 m out of a 10 m target and stopped climbing after an EKF altitude
+variance warning."
 
-- a mission debugger for PX4 and ArduPilot
-- a structured failure-analysis tool with cited evidence
-- a local, single-user, single-binary workflow (Rust API + React UI + SQLite)
-- a read-only MAVLink consumer
+FlightTrace records MAVLink telemetry (or a synthetic demo run),
+reconstructs the mission timeline as normalised events, evaluates a
+declarative YAML assertion spec against the recording, and emits a
+**structured failure report with cited evidence** — locally, on your
+machine, in one process.
 
-## What FlightTrace is not
+**What it is not**: not a ground control station (cannot arm, disarm,
+change mode, or send commands — read-only, always), not AirData /
+Flight Review, not fleet management, not a cloud product, not
+multi-user.
 
-- **not a ground control station** — it cannot arm, disarm, change mode,
-  or send any command. Read-only, always.
-- **not AirData / Flight Review** — no cloud upload, no post-flight
-  sharing service.
-- **not fleet management** — single-user, single-vehicle by design.
-- not a telemetry dashboard
-- not a generic time-series database
-- not a cloud product, not multi-user, not multi-tenant
-- not an AI auto-diagnosis tool
+## Quick demo
 
-## How it works
-
-1. **Ingest.** `flighttrace-mavlink` reads MAVLink UDP packets from SITL or a
-   real vehicle. The demo source produces the same shape of data without a
-   vehicle.
-2. **Normalize.** Each MAVLink message is translated into a vehicle-agnostic
-   `NormalizedEvent` (e.g. `ArmedChanged`, `AltitudeUpdated`,
-   `TelemetryGapDetected`) plus periodic `TelemetrySample`s. Everything
-   downstream consumes these — the source is interchangeable.
-3. **Evaluate.** When a mission run ends (or on demand via the re-evaluate
-   API), `flighttrace-assertions` runs the YAML mission spec against the
-   recorded events and samples and emits per-step `AssertionResult`s plus, on
-   failure, a `FailureReport` with reason, evidence, and a likely cause.
-
-## Architecture
-
-```
-+-----------------------------+        +--------------------------+
-|  React + TypeScript + Vite  | <----> |  Axum HTTP API (Rust)    |
-|  web/                       |  REST  |  flighttrace-api         |
-+-----------------------------+        +--------------------------+
-                                                   |
-                                                   v
-                            +------------------------------------------+
-                            |  flighttrace-core         (domain types) |
-                            |  flighttrace-storage      (sqlx + SQLite)|
-                            |  flighttrace-assertions   (YAML engine)  |
-                            |  flighttrace-demo         (seed run)     |
-                            |  flighttrace-mavlink      (UDP ingest)   |
-                            +------------------------------------------+
-                                                   |
-                                                   v
-                                       +--------------------------+
-                                       |  SQLite (sqlx)           |
-                                       |  ./data/flighttrace.db   |
-                                       +--------------------------+
-                                                   ^
-                                                   |
-                                       +--------------------------+
-                                       | PX4 / ArduPilot SITL     |
-                                       | via MAVLink UDP (read)   |
-                                       +--------------------------+
-```
-
-The Rust workspace is six small crates plus a CLI binary (`flighttrace-cli`).
-Each crate has one responsibility and one public surface; `flighttrace-core`
-owns the domain types and nothing else redefines them.
-
-## Quickstart — demo only
-
-No PX4 or ArduPilot installation is needed for this path. The demo source
-produces a deterministic failed run that exercises the full pipeline.
-
-Prereqs: a stable Rust toolchain (workspace uses `edition = "2024"`) and
+Requires a stable Rust toolchain (`edition = "2024"`, MSRV ≥ 1.85) and
 Node.js ≥ 18 with `npm`.
 
 ```bash
-# Terminal 1 — API + SQLite (demo-only mode, no MAVLink).
-cargo run -p flighttrace-cli -- serve \
-    --bind 127.0.0.1:8080 \
-    --database ./data/flighttrace.db
-
-# Terminal 2 — Vite dev server.
-cd web
-npm install
-npm run dev
-```
-
-Then:
-
-1. Open <http://localhost:5173>.
-2. Click **Create demo failed run** in the top right of the runs list.
-3. The new row appears at the top, badged `FAILED — TAKEOFF_TIMEOUT`. Click
-   it.
-4. The run detail page shows the failure report card (`Mission failed:
-   TAKEOFF_TIMEOUT`, evidence list, likely cause), the mission timeline, the
-   assertion table, the telemetry overview, and the raw event log.
-
-The run is persisted in `./data/flighttrace.db` and survives restarts.
-
-### Local configuration
-
-Every `serve` option can also come from the environment. Resolution order is
-**CLI flag > environment variable > built-in default**:
-
-| Environment variable | CLI flag | Default |
-| --- | --- | --- |
-| `FLIGHTTRACE_BIND` | `--bind` | `127.0.0.1:8080` |
-| `FLIGHTTRACE_DATABASE` | `--database` | `./data/flighttrace.db` |
-| `FLIGHTTRACE_MAVLINK` | `--mavlink` | unset |
-| `FLIGHTTRACE_MAVLINK_DIALECT` | `--mavlink-dialect` | `common` |
-| `FLIGHTTRACE_MISSION` | `--mission` | unset |
-| `FLIGHTTRACE_WEB_DIR` | `--web-dir` | unset (API-only) |
-| `FLIGHTTRACE_OPEN` | `--open` | unset |
-
-`RUST_LOG` controls tracing output and `RUST_BACKTRACE` has its normal Rust
-meaning. Copy the example and export it into the current shell before running
-the CLI (`clap` reads the environment; it does not load `.env` itself):
-
-```bash
-cp .env.example .env
-set -a
-source .env
-set +a
-cargo run -p flighttrace-cli -- serve
-```
-
-For example, `--bind 127.0.0.1:8089` overrides
-`FLIGHTTRACE_BIND=127.0.0.1:8088`. The root `.env` is gitignored, while
-`.env.example` is safe to commit.
-
-VS Code launch configurations read the same root `.env` file. Its example
-uses debug bind address `127.0.0.1:8088`, leaving the README quickstart on
-port `8080`. MAVLink and mission variables are commented out by default, so
-the `CLI: serve demo-only` profile remains demo-only; the MAVLink profile
-supplies them as CLI flags.
-
-### Run modes
-
-FlightTrace has three run modes; pick the one that fits the task.
-
-- **CLI dev (two processes).** `cargo run … serve` on `:8080` and
-  `npm run dev` on `:5173`. Best for frontend iteration; Vite's HMR is
-  live. This is the workflow used in the demo quickstart above.
-- **CLI packaged (one process).** Build the frontend once, then let
-  `flighttrace serve` also serve the bundle from the same origin. Best
-  for evaluation, screenshots, and shipping a single binary alongside a
-  `web-dist/` folder.
-- **Desktop (Tauri, one process).** A thin Tauri v2 shell that spawns
-  the same Axum server on a random loopback port and points a native
-  WebView at it. Same API, same React bundle — no Electron. See below.
-
-**CLI packaged mode**:
-
-```bash
-# One-time frontend build.
 cd web && npm ci && npm run build && cd ..
-
-# One process serves both the API and the UI.
 cargo run -p flighttrace-cli -- serve \
-    --bind 127.0.0.1:8080 \
     --database ./data/flighttrace.db \
     --web-dir ./web/dist \
     --open
 ```
 
-Then open <http://127.0.0.1:8080>. `--open` launches the default browser
-once the listener binds — drop it in headless environments. Client-side
-routes like `/runs/<id>` fall back to `index.html`, so React Router
-still owns them; unknown `/api/*` paths still return the JSON 404
-envelope. When `--web-dir` is omitted the API-only behaviour is
-identical to previous releases. The frontend uses same-origin fetches
-in this mode — nothing to configure.
+Then in the browser: click **Create demo failed run** at the top
+right, open the new row.
 
-**Desktop mode (Tauri):**
+## What you should see
 
-```bash
-# One-time frontend build.
-cd web && npm ci && npm run build && cd ..
+The run detail page renders this sentence at the top:
 
-# One-time tauri-cli install.
-cargo install tauri-cli --version '^2'
+> **TAKEOFF_TIMEOUT happened because target altitude was 10.0 m, but
+> the vehicle only reached 2.4 m and stopped climbing after EKF
+> altitude variance.**
 
-# Native window with the FlightTrace UI.
-cd apps/flighttrace-desktop/src-tauri
-cargo tauri dev
-```
+...backed by five fact tiles (target / max reached / gap / failure
+time / STATUSTEXT), an altitude chart with a dashed target line and a
+failure marker, a mission timeline with relative timestamps, an
+assertions table, and a raw event log. If that sentence rendered, the
+whole pipeline works.
 
-The shell binds Axum on `127.0.0.1:0` (a free loopback port) and points
-the WebView at that URL. Closing the window flips a graceful-shutdown
-watch and the process exits within a fraction of a second.
+## Run modes
 
-**Web assets** are resolved in this order (first match wins):
+| Mode | Command shape | Best for |
+| --- | --- | --- |
+| **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | The command above; one-process demo. |
+| **Desktop (Tauri v2)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window; see [`docs/desktop.md`](docs/desktop.md). |
+| **Dev (two processes)** | `cargo run … serve` + `npm run dev` | Frontend iteration with HMR. |
+| **CLI, API-only** | `flighttrace serve` | Backend dev; `curl`-driven. |
 
-1. `FLIGHTTRACE_WEB_DIR` env var.
-2. `<Tauri resource-dir>/web-dist` — where `cargo tauri build` drops the
-   SPA (declared in `apps/flighttrace-desktop/src-tauri/tauri.conf.json`
-   `bundle.resources`).
-3. `<Tauri resource-dir>/_up_/web-dist` and `.../web/dist` (alternative
-   bundler layouts).
-4. `<exe dir>/web-dist` — drop `web-dist/` next to a portable binary.
-5. `<repo>/web/dist` via `CARGO_MANIFEST_DIR` — how `cargo tauri dev`
-   from a checkout finds them.
+Full explanations in [`docs/run-modes.md`](docs/run-modes.md). Every
+`serve` flag also reads a matching `FLIGHTTRACE_*` env var — the full
+table lives in [`docs/configuration.md`](docs/configuration.md).
 
-If none work, the shell exits with a numbered list of every path it
-tried and the recommended fix (`npm run build`, set
-`FLIGHTTRACE_WEB_DIR`, or drop `web-dist/` next to the binary). No
-blank window.
+## Read-only guarantee
 
-**SQLite** lives at the platform's app-data dir by default —
-`~/.local/share/com.flighttrace.desktop/flighttrace-desktop.db` on
-Linux, `~/Library/Application Support/com.flighttrace.desktop/…` on
-macOS, `%APPDATA%\com.flighttrace.desktop\…` on Windows. Override with
-`FLIGHTTRACE_DATABASE`.
+FlightTrace **never** writes to the MAVLink socket. It does not arm,
+disarm, change mode, upload missions, set parameters, or send any
+other command. The `flighttrace-mavlink` crate exposes no send
+function, and an in-tree integration test
+(`crates/flighttrace-mavlink/tests/read_only_invariant.rs`) scans the
+crate's source for forbidden send-related APIs on every build. Attach
+FlightTrace to a live vehicle as a passive observer.
 
-The desktop crate is intentionally **not** a workspace member: on Linux
-it needs webkit2gtk + GTK + libglib link-time deps that aren't required
-for the CLI. Install on Debian/Ubuntu:
+## How it works
 
-```bash
-sudo apt install \
-    libwebkit2gtk-4.1-dev libgtk-3-dev libglib2.0-dev \
-    libayatana-appindicator3-dev librsvg2-dev pkg-config \
-    build-essential curl wget file libssl-dev
-```
-
-On Ubuntu 24.04 LTS the correct package is `libwebkit2gtk-4.1-dev` —
-`libwebkit2gtk-4.0-dev` is now a transitional dummy. Tauri v2 auto-links
-against `4.1`, so the command above is enough. If you see
-`Package 'gobject-2.0'` or `Package 'glib-2.0'` errors from `pkg-config`
-during `cargo build`, `libglib2.0-dev` is the missing piece.
-
-Fedora / RHEL:
-
-```bash
-sudo dnf install \
-    webkit2gtk4.1-devel gtk3-devel glib2-devel \
-    libappindicator-gtk3-devel librsvg2-devel \
-    openssl-devel curl wget file
-sudo dnf group install "C Development Tools and Libraries"
-```
-
-Arch / Manjaro:
-
-```bash
-sudo pacman -S --needed \
-    webkit2gtk-4.1 gtk3 glib2 \
-    libappindicator-gtk3 librsvg \
-    base-devel curl wget file openssl
-```
-
-Running under **WSL2**: `cargo tauri dev` renders through WSLg on
-Windows 11 (default install, nothing extra needed). On Windows 10 you
-need a running X server (VcXsrv, X410) and `DISPLAY` exported before
-launching the app.
-
-WSL2 doesn't expose `/dev/dri`, so webkit2gtk's GPU-accelerated paths
-fail their probe and log `libEGL warning: failed to get driver name for
-fd -1`, `MESA-LOADER: failed to retrieve device information`, or `ZINK:
-failed to choose pdev`. These are cosmetic — WebKit falls back to
-software rendering and the window works fine. To silence them and skip
-the failing probe, export before running Tauri (also present as
-commented-out lines in `.env.example`):
-
-```bash
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-```
-
-macOS and Windows don't need extra system packages beyond the standard
-Tauri prerequisites — see [Tauri v2's prerequisites
-guide](https://v2.tauri.app/start/prerequisites/) for the current list.
-
-## Quickstart — ArduPilot SITL
-
-ArduPilot's `sim_vehicle.py` already publishes MAVLink; add a `--out` line so
-FlightTrace gets its own listener (QGroundControl, if you use it, stays on
-the default port).
-
-```bash
-# Terminal 1 — ArduPilot SITL (from your ardupilot checkout).
-sim_vehicle.py -v ArduCopter --console --map \
-    --out=udpout:127.0.0.1:14550
-
-# Terminal 2 — FlightTrace with MAVLink ingestion.
-cargo run -p flighttrace-cli -- serve \
-    --bind 127.0.0.1:8080 \
-    --database ./data/flighttrace.db \
-    --mavlink udp://127.0.0.1:14550 \
-    --mission examples/missions/simple_takeoff.yaml
-
-# Terminal 3 — Vite dev server.
-cd web && npm run dev
-```
-
-A new run with `source = mavlink` appears in the UI as soon as the first
-`HEARTBEAT` arrives. Use MAVProxy / QGroundControl to arm, take off, and fly.
-When the session ends (inactivity timeout or Ctrl+C), the mission spec is
-evaluated and the run is finalised as `succeeded` or `failed` with a
-`FailureReport`.
-
-`--mavlink-dialect ardupilotmega` decodes ArduPilot's dialect extensions; the
-default `common` works for both stacks.
-
-## Quickstart — PX4 SITL
-
-PX4's `mavlink` module publishes to `udp://127.0.0.1:14550` for
-QGroundControl by default — FlightTrace can attach to the same endpoint.
-
-```bash
-# Terminal 1 — PX4 SITL (from your PX4-Autopilot checkout).
-make px4_sitl gazebo-classic
-
-# Terminal 2 — FlightTrace with MAVLink ingestion.
-cargo run -p flighttrace-cli -- serve \
-    --bind 127.0.0.1:8080 \
-    --database ./data/flighttrace.db \
-    --mavlink udp://127.0.0.1:14550 \
-    --mission examples/missions/simple_takeoff.yaml
-
-# Terminal 3 — Vite dev server.
-cd web && npm run dev
-```
-
-PX4 speaks the `common` dialect so the default `--mavlink-dialect` is fine.
-If port `14550` is already occupied by QGroundControl, configure PX4 (or
-ArduPilot) to publish to a free port (e.g. `14560`) and pass that to
-FlightTrace.
-
-### Read-only guarantee
-
-FlightTrace **never** writes to the MAVLink socket. It does not arm, disarm,
-change mode, upload missions, set parameters, or send any other command. The
-`flighttrace-mavlink` crate exposes no send function, and an in-tree
-integration test (`crates/flighttrace-mavlink/tests/read_only_invariant.rs`)
-scans the crate's source for forbidden send-related APIs on every build.
-Attach FlightTrace to a live vehicle as a passive observer.
+1. **Ingest.** `flighttrace-mavlink` reads MAVLink UDP packets from
+   SITL or a real vehicle. The demo source produces the same shape of
+   data without a vehicle.
+2. **Normalize.** Each MAVLink message becomes a vehicle-agnostic
+   `NormalizedEvent` (`ArmedChanged`, `AltitudeUpdated`,
+   `TelemetryGapDetected`, …) plus periodic `TelemetrySample`s.
+   Everything downstream consumes these — the source is
+   interchangeable.
+3. **Evaluate.** When a mission run ends (or on demand via the
+   re-evaluate API), `flighttrace-assertions` runs the YAML mission
+   spec against the recorded events and samples.
+4. **Explain.** Failing checks produce a `FailureReport` with the
+   reason, cited evidence (events, samples, statustexts), and a
+   one-paragraph likely cause.
 
 ## Mission assertions
 
-A mission spec is a small YAML document describing the steps the vehicle is
-expected to complete. The engine evaluates each step's `expect` block against
-the recorded events and telemetry samples and emits one `AssertionResult` per
-check (`pass`, `warn`, or `fail`).
-
-`examples/missions/simple_takeoff.yaml` is the spec used by the demo run and
-the SITL quickstarts:
+A mission spec is a small YAML file. From
+`examples/missions/simple_takeoff.yaml`:
 
 ```yaml
 mission: simple_takeoff
@@ -394,93 +134,40 @@ steps:
       no_telemetry_gap_longer_than_sec: 2
 ```
 
-The v0.1 checks are:
+v0.1 checks: `heartbeat_within_sec`, `armed`, `altitude_at_least_m`,
+`mode_not_changes`, `no_telemetry_gap_longer_than_sec`. When any check
+fails, the engine emits a `FailureReport` with `summary = "Mission
+failed: <REASON>"`, the union of cited evidence, and a likely-cause
+string. No scripting, no conditional logic — checks are declarative.
 
-| Check                                | Meaning                                                                  | Failure reason         |
-| ------------------------------------ | ------------------------------------------------------------------------ | ---------------------- |
-| `heartbeat_within_sec: <n>`          | A `HeartbeatReceived` event lands within `n` seconds of the step window. | `NoHeartbeat`          |
-| `armed: <bool>`                      | The vehicle reaches the expected armed state inside the step window.     | `CommandTimeout`       |
-| `altitude_at_least_m: <m>`           | An `AltitudeUpdated` or telemetry sample meets `m` metres inside window. | `TakeoffTimeout`       |
-| `mode_not_changes: true`             | No `ModeChanged` event fires inside the step window.                     | `UnexpectedModeChange` |
-| `no_telemetry_gap_longer_than_sec`   | No `TelemetryGapDetected` event exceeds the budget inside the window.    | `TelemetryGap`         |
+## SITL quickstarts
 
-When any check fails, the engine emits a `FailureReport` with `summary =
-"Mission failed: <REASON>"`, the union of evidence cited by failing checks
-(events, samples, statustexts), and a one-paragraph likely-cause string.
+Short form. See [`docs/sitl.md`](docs/sitl.md) for the full recipe
+with three terminals, port-conflict notes, and MAVProxy tips.
 
-There is no scripting language, no conditional logic, and no arbitrary user
-code in the YAML — checks are declarative.
-
-## HTTP API
-
-The Axum server in `flighttrace-api` exposes:
-
-| Method | Path                                  | Purpose                                                                 |
-| ------ | ------------------------------------- | ----------------------------------------------------------------------- |
-| GET    | `/health`                             | Liveness probe — `{"status":"ok","version":"…"}`.                       |
-| GET    | `/api/runs?limit&offset`              | Mission runs, ordered by `startedAt DESC`.                              |
-| GET    | `/api/runs/:id`                       | Full run header (status, failure reason, phases).                       |
-| GET    | `/api/runs/:id/events`                | Normalized events for the run, time-ordered.                            |
-| GET    | `/api/runs/:id/telemetry`             | Telemetry samples for the run, time-ordered.                            |
-| GET    | `/api/runs/:id/assertions`            | Assertion results for the run.                                          |
-| GET    | `/api/runs/:id/failure-report`        | Structured failure report, 404 if the run has none.                     |
-| POST   | `/api/runs/:id/reevaluate`            | Re-runs the assertion engine. Body `{ "missionPath": "…" }` is optional. |
-| POST   | `/api/demo/run`                       | Generates the deterministic demo failed run and returns `{ "id": "…" }`. |
-
-All JSON uses `camelCase` field names. Errors return
-`{ "error": { "code": "...", "message": "..." } }` and the documented HTTP
-status. The dev CORS allowlist accepts `http://localhost:5173` and
-`http://127.0.0.1:5173`.
-
-## Project layout
-
-```
-flighttrace/
-  Cargo.toml                          # workspace manifest
-  crates/
-    flighttrace-core/                 # domain types, ids, time, errors
-    flighttrace-demo/                 # deterministic failed-run generator
-    flighttrace-storage/              # sqlx + SQLite, migrations, repos
-    flighttrace-api/                  # Axum REST API (+ CORS, tracing)
-    flighttrace-mavlink/              # read-only MAVLink UDP ingestion
-    flighttrace-assertions/           # YAML assertion engine + reports
-    flighttrace-cli/                  # `flighttrace` binary
-  web/                                # React + TypeScript + Vite UI
-    src/
-      pages/                          # RunsListPage, RunDetailPage
-      components/                     # RunsTable, FailureReportCard, …
-      api/                            # typed fetch client
-      types/                          # TS mirror of the API DTOs
-  examples/
-    missions/
-      simple_takeoff.yaml             # spec used by demo + SITL quickstarts
-  docs/
-    prd.md                            # product brief
-    context.md                        # working conventions
-    issues/                           # per-issue specs (v0.1 history)
-    screenshots/                      # captured PNGs go here
-  data/                               # SQLite database (gitignored)
-```
-
-## Backend Docker image
-
-The root `Dockerfile` builds only the Rust backend. It does not build or serve
-the web frontend. Build and run it with a persistent Docker volume for SQLite:
+**ArduPilot**:
 
 ```bash
-docker build -t flighttrace-backend .
-docker run --rm \
-    --publish 8080:8080 \
-    --volume flighttrace-data:/data \
-    flighttrace-backend
+sim_vehicle.py -v ArduCopter --out=udpout:127.0.0.1:14550
+cargo run -p flighttrace-cli -- serve \
+    --database ./data/flighttrace.db \
+    --web-dir ./web/dist \
+    --mavlink udp://127.0.0.1:14550 \
+    --mission examples/missions/simple_takeoff.yaml \
+    --open
 ```
 
-The container listens on `0.0.0.0:8080` and stores its database at
-`/data/flighttrace.db`. Verify it with
-`curl http://127.0.0.1:8080/health`.
+**PX4**:
 
-This image is a backend-only packaging option. The Cargo and npm commands
-below remain the primary development workflow.
+```bash
+make px4_sitl gazebo-classic
+cargo run -p flighttrace-cli -- serve \
+    --database ./data/flighttrace.db \
+    --web-dir ./web/dist \
+    --mavlink udp://127.0.0.1:14550 \
+    --mission examples/missions/simple_takeoff.yaml \
+    --open
+```
 
 ## Development
 
@@ -490,8 +177,8 @@ Quality gates that must stay green:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cd web && npm run build
-cd web && npm run lint
+cd web && npm run build && npm run lint
+cd apps/flighttrace-desktop/src-tauri && cargo check
 ```
 
 Useful one-offs:
@@ -500,99 +187,87 @@ Useful one-offs:
 # Inspect the deterministic demo bundle as JSON.
 cargo run -p flighttrace-cli -- demo | head -n 40
 
-# Start the API against a throwaway database.
-cargo run -p flighttrace-cli -- serve \
-    --database ./data/smoke.db \
-    --bind 127.0.0.1:18181
-
-# Generate a demo failed run and fetch its failure report.
-curl -s -X POST http://127.0.0.1:18181/api/demo/run
-curl -s http://127.0.0.1:18181/api/runs \
-    | head -n 5
-curl -s http://127.0.0.1:18181/api/runs/<id>/failure-report
+# End-to-end smoke against a release build.
+cargo build --release -p flighttrace-cli
+scripts/release-smoke.sh
 ```
 
-## Screenshots
+## Documentation
 
-The four images below are **schematic placeholders** in the FlightTrace
-palette (~12 KB each) so this section never renders a broken image.
-Replace each file under `docs/screenshots/` with a real capture — see
-[`docs/screenshots/README.md`](docs/screenshots/README.md) for the
-capture recipe.
+Focused deep-dives, one per topic:
 
-|  |  |
-| --- | --- |
-| **Runs list** — failed demo run at the top, `TAKEOFF_TIMEOUT` badge. | **Failure summary** — plain-English sentence, five fact tiles, altitude chart with target line + failure marker. |
-| ![Runs list](docs/screenshots/runs-list.png) | ![Failure summary](docs/screenshots/run-detail-failure-summary.png) |
-| **Telemetry overview** — full altitude chart, vertical-speed panel, sample table. | **Desktop shell** — same UI in the Tauri v2 native window. |
-| ![Telemetry overview](docs/screenshots/run-detail-telemetry.png) | ![Desktop window](docs/screenshots/desktop-window.png) |
+- [`docs/run-modes.md`](docs/run-modes.md) — packaged web, desktop,
+  dev, and API-only.
+- [`docs/desktop.md`](docs/desktop.md) — Tauri v2 setup, Linux
+  packages, WSL2 rendering fix, resource resolution.
+- [`docs/configuration.md`](docs/configuration.md) — env-var table,
+  `.env` pattern, VS Code launch profiles.
+- [`docs/sitl.md`](docs/sitl.md) — full PX4 and ArduPilot recipes.
+- [`docs/api.md`](docs/api.md) — endpoint reference, JSON
+  conventions, error envelope, CORS, smoke script.
+- [`docs/docker.md`](docs/docker.md) — backend-only, optional image.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — ports, DB
+  locks, MAVLink silence, WSL2, toolchain.
 
-To regenerate the placeholders after a palette change:
+Reference docs live alongside these:
 
-```bash
-python3 scripts/generate_screenshot_placeholders.py
+- [`docs/prd.md`](docs/prd.md) — product brief.
+- [`docs/context.md`](docs/context.md) — working conventions.
+- [`docs/tech-stack.md`](docs/tech-stack.md) — architecture and
+  design-system notes.
+- [`docs/release-checklist.md`](docs/release-checklist.md) — the
+  cut-a-release checklist.
+- [`docs/release-notes/v0.1.0.md`](docs/release-notes/v0.1.0.md) —
+  the current release note draft.
+- [`docs/issues/`](docs/issues/) — per-issue specs and verification
+  logs.
+
+## Project layout
+
 ```
-
-## Troubleshooting
-
-- **Port 8080 already in use (`Address already in use`).** Find the listener
-  with `lsof -i :8080` or `ss -ltnp | grep 8080`, then stop it if it is safe
-  to do so. Alternatively set `FLIGHTTRACE_BIND=127.0.0.1:8088` or pass
-  `--bind 127.0.0.1:8088`. Update `web/.env.development`'s
-  `VITE_API_BASE_URL` to match.
-- **Port 5173 already in use.** Vite will offer the next port and print it.
-  If you pin a custom port, update the CORS allowlist in
-  `crates/flighttrace-api/src/router.rs` (`DEFAULT_CORS_ORIGIN`) and rebuild.
-- **No runs appear in the UI.** Confirm the API is running
-  (`curl http://127.0.0.1:8080/health`) and that the browser dev console
-  shows successful `GET /api/runs` calls. Check that
-  `web/.env.development` points at the same address the API bound to.
-- **MAVLink listener sees no heartbeats.** Verify the endpoint
-  (`udp://127.0.0.1:14550` by default), check that no other consumer has
-  bound the same port, confirm the SITL is publishing (PX4: `mavlink status`
-  in nsh; ArduPilot: `sim_vehicle.py` console), and on WSL2 / Windows make
-  sure the firewall allows UDP loopback. Try `--mavlink-dialect
-  ardupilotmega` if your stack uses dialect extensions.
-- **Database is locked.** Only one backend process can write the SQLite file
-  at a time. Stop any other `flighttrace serve` instance, or point each to a
-  separate `--database` path.
-- **Compilation errors after pulling.** Run `cargo clean` and re-run
-  `cargo build --workspace`. The workspace requires a toolchain that
-  supports `edition = "2024"`.
-- **Frontend type errors after API changes.** The TS DTOs in
-  `web/src/types/api.ts` are hand-written mirrors of the Rust DTOs. If a
-  field is renamed on the Rust side, update the TS side in lockstep.
+flighttrace/
+  Cargo.toml                       # workspace manifest
+  apps/
+    flighttrace-desktop/           # Tauri v2 shell (excluded from workspace)
+  crates/
+    flighttrace-core/              # domain types
+    flighttrace-demo/              # deterministic failed-run generator
+    flighttrace-storage/           # sqlx + SQLite
+    flighttrace-api/               # Axum REST API + static serving
+    flighttrace-mavlink/           # read-only MAVLink UDP ingest
+    flighttrace-assertions/        # YAML assertion engine + reports
+    flighttrace-cli/               # `flighttrace` binary
+  web/                             # React + TypeScript + Vite UI
+  examples/missions/               # simple_takeoff.yaml
+  docs/                            # everything above
+  scripts/                         # release-smoke.sh + generators
+```
 
 ## Roadmap
 
-Out of scope for v0.1, candidate post-v0.1 work:
+Post-v0.1 candidates:
 
-- GitHub Actions CI for `fmt` / `clippy` / `test` / `npm build` on PRs.
-- Single-binary release packaging: API serves the pre-built `web/dist`.
-- Live UI streaming via SSE so MAVLink-sourced runs update without manual
-  refresh.
+- Real screenshots replacing the current placeholders.
+- Successful-vs-failed run diff view.
+- Live UI streaming for MAVLink runs (SSE, no page refresh).
 - Additional assertion checks (`waypoint_reached_within_sec`,
   `battery_above_pct`, `gps_fix_at_least`).
 - `.bin` / `.ulg` log import for post-flight debugging.
+- Better desktop installers (auto-bundle `web/dist`, macOS notarisation).
 - Multi-vehicle sessions keyed on MAVLink `system_id`.
 
-Explicitly out of scope, no plans: cloud hosting, multi-user accounts, auth,
-RBAC, billing, Kubernetes, Kafka/NATS, ROS 2, TimescaleDB, ClickHouse,
-companion-computer agents, command-sending paths, AI/LLM root-cause analysis.
-
-### A note on Docker
-
-No `docker-compose.yml` ships with v0.1 on purpose: the supported workflow is
-`cargo run` + `npm run dev` against a local SQLite file, and a meaningful
-container build is gated on the single-binary release packaging above.
+Explicitly out of scope, no plans: cloud hosting, multi-user accounts,
+auth, RBAC, billing, Kubernetes, Kafka/NATS, ROS 2, TimescaleDB,
+ClickHouse, companion-computer agents, command-sending paths, AI/LLM
+root-cause analysis.
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+Dual-licensed under [Apache License, Version 2.0](LICENSE-APACHE) or
 [MIT License](LICENSE-MIT) at your option. Workspace metadata declares
 `license = "MIT OR Apache-2.0"`.
 
 Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in the work by you, as defined in the Apache-2.0
-license, shall be dual licensed as above, without any additional terms or
-conditions.
+submitted for inclusion in the work by you, as defined in the
+Apache-2.0 license, shall be dual licensed as above, without any
+additional terms or conditions.
