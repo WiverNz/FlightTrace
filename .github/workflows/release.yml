@@ -142,9 +142,103 @@ jobs:
           path: ${{ matrix.asset_glob }}
           if-no-files-found: error
 
+  desktop-windows:
+    name: Build Windows native desktop app
+    # Independent of the CLI matrix build; failures here don't block CLI
+    # release publishing. See docs/issues/14-windows-desktop-release-artifact.md.
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Cargo (desktop crate)
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-windows
+          workspaces: apps/flighttrace-desktop/src-tauri
+
+      - name: Cache tauri-cli
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri.exe
+          key: tauri-cli-v2-${{ runner.os }}
+
+      - name: Install tauri-cli
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --locked --version '^2'
+
+      # bundle.resources declares web/dist as a compile-time-validated
+      # resource path, so it MUST exist before cargo tauri build runs.
+      # This mirrors the desktop-check job in ci.yml.
+      - name: Build web/dist
+        working-directory: web
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Tauri app
+        working-directory: apps/flighttrace-desktop/src-tauri
+        run: cargo tauri build
+
+      - name: Rename + collect installer artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $bundleDir = "apps/flighttrace-desktop/src-tauri/target/release/bundle"
+          $out = "dist"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          # NSIS setup.exe (small, recommended).
+          Get-ChildItem "$bundleDir/nsis/*.exe" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $dst = Join-Path $out "flighttrace-desktop-$version-x86_64-pc-windows-msvc-setup.exe"
+              Copy-Item $_.FullName $dst
+              Write-Host "collected NSIS installer -> $dst"
+            }
+
+          # MSI (group-policy friendly). Both may be produced by
+          # `bundle.targets: "all"` — ship both.
+          Get-ChildItem "$bundleDir/msi/*.msi" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $dst = Join-Path $out "flighttrace-desktop-$version-x86_64-pc-windows-msvc.msi"
+              Copy-Item $_.FullName $dst
+              Write-Host "collected MSI installer  -> $dst"
+            }
+
+          # Fail loudly if neither format landed — that means Tauri
+          # produced an installer we didn't glob for, or the build silently
+          # skipped its bundle step.
+          if (-not (Get-ChildItem $out)) {
+            Write-Error "no Tauri installer produced under $bundleDir"
+            exit 1
+          }
+
+      - name: Upload desktop installer artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-desktop-windows
+          path: dist/*
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, desktop-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,7 +257,22 @@ jobs:
 
       - name: Generate SHA256SUMS
         working-directory: artifacts
-        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+        # Cover every CLI + desktop artifact shape produced upstream.
+        # `2>/dev/null` swallows the noise when a pattern has zero matches
+        # (e.g. no .msi if the Tauri MSI target didn't run); `|| true`
+        # keeps the step green in that case. The next release-publish step
+        # will still catch a fully-empty artifacts dir.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=( *.tar.gz *.zip *.exe *.msi )
+          if (( ${#artifacts[@]} == 0 )); then
+            echo "no release artifacts found — refusing to publish an empty release" >&2
+            exit 1
+          fi
+          sha256sum "${artifacts[@]}" > SHA256SUMS
+          echo "SHA256SUMS covers ${#artifacts[@]} artifact(s):"
+          cat SHA256SUMS
 
       - name: Create GitHub Release
         env:
@@ -185,10 +294,23 @@ jobs:
           cat > release-notes.md <<EOF
           $notes
 
-          Each archive contains the \`flighttrace\` binary and a
-          \`web-dist/\` folder with the prebuilt React UI. Run
-          \`flighttrace serve --web-dir ./web-dist --open\` and open the
-          bound address in a browser — no separate Vite dev server needed.
+          ## Downloads
+
+          Two flavours for Windows, one for Linux:
+
+          - \`flighttrace-<v>-x86_64-pc-windows-msvc.zip\` / \`.tar.gz\` —
+            **CLI + web-dist bundle.** Extract, run
+            \`flighttrace.exe\` (or \`./flighttrace\`) and the UI opens in
+            your default browser. Includes \`start-flighttrace.bat\` for
+            one-click launch on Windows.
+          - \`flighttrace-desktop-<v>-x86_64-pc-windows-msvc-setup.exe\` /
+            \`.msi\` — **native desktop app.** Windows Tauri v2 installer;
+            same UI in a native window, no browser. Requires the WebView2
+            runtime (preinstalled on Windows 11; on Windows 10 the
+            installer will fetch it on first run).
+
+          Both flavours use the same backend, the same React UI, and the
+          same local SQLite storage. Pick whichever fits.
           EOF
 
           gh release create "${GITHUB_REF_NAME}" artifacts/* \

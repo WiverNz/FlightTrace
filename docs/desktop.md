@@ -7,6 +7,30 @@ points a WebView at that URL. Same API contract, same React bundle,
 same SQLite schema. See [`run-modes.md`](run-modes.md) for how it
 compares to the other modes.
 
+## Downloaded Windows installer (end-user path)
+
+The simplest way to run the native desktop app is to download the
+Windows installer from the [GitHub Release](https://github.com/WiverNz/FlightTrace/releases)
+page. Since v0.1.0 the release includes:
+
+- **`flighttrace-desktop-<v>-x86_64-pc-windows-msvc-setup.exe`** —
+  NSIS setup, ~10 MB. Recommended default.
+- **`flighttrace-desktop-<v>-x86_64-pc-windows-msvc.msi`** — MSI
+  variant for group-policy / enterprise deployment. Same content.
+
+**WebView2 runtime**: preinstalled on Windows 11. On Windows 10 the
+installer's NSIS bootstrapper fetches the runtime from Microsoft on
+first launch. No manual install needed.
+
+After install, launch **FlightTrace** from the Start menu. The app
+opens a native window, no browser required. The internal Axum server
+runs on a random loopback port and shuts down cleanly when you close
+the window.
+
+If you'd rather use your existing browser, download the CLI archive
+instead — see [§ Run modes](../README.md#run-modes) for the two
+side-by-side choices.
+
 ## Prerequisites
 
 - **Node.js ≥ 18** to build `web/dist`.

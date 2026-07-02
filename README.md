@@ -74,15 +74,30 @@ whole pipeline works.
 
 | Mode | Command shape | Best for |
 | --- | --- | --- |
-| **Downloaded release** | Windows: double-click `start-flighttrace.bat` or `.\flighttrace.exe`. Linux/macOS: `./flighttrace`. | End users. Auto-detects `web-dist/`, opens the default browser. |
+| **Downloaded CLI (opens browser)** | Windows: double-click `start-flighttrace.bat` or `.\flighttrace.exe`. Linux: `./flighttrace`. | End users who don't mind the default browser opening. |
+| **Downloaded native desktop app** | Windows: install `flighttrace-desktop-<v>-…-setup.exe` (or `.msi`), launch **FlightTrace** from the Start menu. | End users who want a native window, no browser. |
 | **Packaged web** | `flighttrace serve --web-dir ./web/dist --open` | Developer packaged evaluation from a checkout. |
-| **Desktop (Tauri v2)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window; see [`docs/desktop.md`](docs/desktop.md). |
+| **Desktop (Tauri v2, from source)** | `cd apps/flighttrace-desktop/src-tauri && cargo tauri dev` | Native window during development; see [`docs/desktop.md`](docs/desktop.md). |
 | **Dev (two processes)** | `cargo run … serve` + `npm run dev` | Frontend iteration with HMR. |
 | **CLI, API-only** | `flighttrace serve` | Backend dev; `curl`-driven. |
 
-The first row is what a user gets from an extracted release archive.
-No arguments, no help wall — the binary detects `web-dist/` sitting
-next to it, binds a random loopback port, prints
+**Which asset should I download?**
+
+- **CLI zip / tarball** (`flighttrace-<v>-<target>.zip` / `.tar.gz`) —
+  contains `flighttrace` + `web-dist/` + docs. Run the binary; it
+  opens your default browser at `http://127.0.0.1:<port>/`. Bring your
+  own browser.
+- **Native desktop installer** (`flighttrace-desktop-<v>-…-setup.exe`
+  or `.msi`, Windows only in v0.1) — installs the same UI in a
+  native window driven by Tauri v2. Requires the Microsoft WebView2
+  runtime; preinstalled on Windows 11, auto-fetched by the installer
+  on Windows 10.
+
+Both flavours use the same backend + React UI + SQLite. Pick whichever
+UX you prefer.
+
+**No-arg CLI details.** Running `flighttrace` bare detects `web-dist/`
+sitting next to it, binds a random loopback port, prints
 `FlightTrace UI: http://127.0.0.1:<port>/`, and opens the browser.
 Missing `web-dist/` produces a single-sentence actionable error
 instead of a silent no-op. Run `flighttrace --help` for the full
