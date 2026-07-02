@@ -10,6 +10,12 @@ description = "FlightTrace command-line entrypoint."
 name = "flighttrace"
 path = "src/main.rs"
 
+# Only used when compiling for a Windows target — the build script gates
+# on CARGO_CFG_TARGET_OS. The dep still compiles as a build-dep on other
+# hosts (tiny cost); the resource-embedding call is skipped.
+[build-dependencies]
+winresource = "0.1"
+
 [dependencies]
 flighttrace-core.workspace = true
 flighttrace-demo.workspace = true
