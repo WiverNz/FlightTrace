@@ -10,16 +10,26 @@
 
 ## Screenshots
 
-|  |  |
-| --- | --- |
-| **Runs list** — failed demo run at the top, `TAKEOFF_TIMEOUT` badge. | **Failure summary** — plain-English sentence, five fact tiles, altitude chart with target line + failure marker. |
-| ![Runs list](docs/screenshots/runs-list.png) | ![Failure summary](docs/screenshots/run-detail-failure-summary.png) |
-| **Telemetry overview** — altitude chart, vertical-speed panel, sample table. | **Desktop shell** — same UI in a Tauri v2 native window. |
-| ![Telemetry overview](docs/screenshots/run-detail-telemetry.png) | ![Desktop window](docs/screenshots/desktop-window.png) |
+**Runs list** — failed demo runs with the `TAKEOFF_TIMEOUT` badge.
 
-*These are palette-matched placeholders (~12 KB each). See
-[`docs/screenshots/README.md`](docs/screenshots/README.md) for the
-capture recipe.*
+![Runs list](docs/screenshots/runs-list.png)
+
+**Failure summary** — plain-English diagnosis, six fact tiles, and an
+altitude chart with the target line and failure marker.
+
+![Failure summary](docs/screenshots/run-detail-failure-summary.png)
+
+**Telemetry overview** — altitude chart, vertical-speed panel, and run
+statistics.
+
+![Telemetry overview](docs/screenshots/run-detail-telemetry.png)
+
+**Desktop shell** — run details in a Tauri v2 native Windows window.
+
+![Desktop window](docs/screenshots/desktop-window.png)
+
+See [`docs/screenshots/README.md`](docs/screenshots/README.md) for the
+capture recipe.
 
 ## Why FlightTrace?
 

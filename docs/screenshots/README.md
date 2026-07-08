@@ -1,10 +1,8 @@
 # Screenshots
 
 This directory holds the images the top-level [README](../../README.md)
-references. It currently contains **placeholders** — schematic layouts
-in the FlightTrace palette with a diagonal `PLACEHOLDER` texture — so
-the README never renders a broken image. Replace each file with a real
-capture using the recipe below.
+references. The checked-in files are captures of the deterministic demo
+run. Refresh them using the recipe below when the UI changes.
 
 ## Files
 
@@ -12,8 +10,8 @@ capture using the recipe below.
 | --- | --- | --- |
 | `runs-list.png` | README §Screenshots | Runs list with the failed demo run at the top; `FAILED — TAKEOFF_TIMEOUT` badge visible. |
 | `run-detail-failure-summary.png` | README §Screenshots | Run detail page, scrolled to the top so the Failure Summary card + AltitudeChart are fully visible. |
-| `run-detail-telemetry.png` | README §Screenshots | Same run, scrolled so the full Telemetry Overview (altitude chart + vertical-speed panel + sample table) fills the frame. |
-| `desktop-window.png` | README §Screenshots | `cargo tauri dev` window on the runs list, native title bar included. |
+| `run-detail-telemetry.png` | README §Screenshots | Same run, scrolled so the Telemetry Overview (altitude chart + vertical-speed panel + run statistics) fills the frame. |
+| `desktop-window.png` | README §Screenshots | Run detail page in a Tauri v2 Windows window, native title bar included. |
 
 ## Capture recipe
 
@@ -55,11 +53,11 @@ capture using the recipe below.
    paths, or window titles containing anything private. The demo run
    is purely synthetic — capture the demo, not a live session.
 
-## Regenerating the placeholders
+## Regenerating fallback placeholders
 
 ```bash
 # From the repo root. Overwrites the four .png files with fresh
-# placeholders in the current palette. Handy after a palette change.
+# fallback placeholders in the current palette.
 python3 scripts/generate_screenshot_placeholders.py
 ```
 
