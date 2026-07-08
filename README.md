@@ -283,24 +283,6 @@ flighttrace/
   scripts/                         # release-smoke.sh + generators
 ```
 
-## Roadmap
-
-Post-v0.1 candidates:
-
-- Real screenshots replacing the current placeholders.
-- Successful-vs-failed run diff view.
-- Live UI streaming for MAVLink runs (SSE, no page refresh).
-- Additional assertion checks (`waypoint_reached_within_sec`,
-  `battery_above_pct`, `gps_fix_at_least`).
-- `.bin` / `.ulg` log import for post-flight debugging.
-- Better desktop installers (auto-bundle `web/dist`, macOS notarisation).
-- Multi-vehicle sessions keyed on MAVLink `system_id`.
-
-Explicitly out of scope, no plans: cloud hosting, multi-user accounts,
-auth, RBAC, billing, Kubernetes, Kafka/NATS, ROS 2, TimescaleDB,
-ClickHouse, companion-computer agents, command-sending paths, AI/LLM
-root-cause analysis.
-
 ## License
 
 Dual-licensed under [Apache License, Version 2.0](LICENSE-APACHE) or
