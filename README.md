@@ -8,6 +8,11 @@
 > and ships with a deterministic demo run so you can evaluate it
 > without installing PX4 or ArduPilot.
 
+<p align="center">
+  <img src="preview.png" width="100%"
+       alt="FlightTrace run detail: plain-English failure summary with fact tiles and an altitude chart marking the TAKEOFF_TIMEOUT.">
+</p>
+
 ## Screenshots
 
 **Runs list** — failed demo runs with the `TAKEOFF_TIMEOUT` badge.
