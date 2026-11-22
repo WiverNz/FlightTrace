@@ -17,6 +17,10 @@ pub enum MavlinkIngestError {
     #[error("MAVLink connect failed: {0}")]
     Connect(#[source] std::io::Error),
 
+    /// Reading a `.tlog` file failed.
+    #[error("tlog read failed: {0}")]
+    Tlog(#[source] std::io::Error),
+
     /// A storage call failed while persisting a run / event / sample.
     #[error("storage error: {0}")]
     Storage(#[from] flighttrace_storage::StorageError),

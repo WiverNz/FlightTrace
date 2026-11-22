@@ -17,6 +17,8 @@ sqlx.workspace = true
 # AsyncMavConnection trait.
 mavlink.workspace = true
 async-trait.workspace = true
+# CRC-checked .tlog reading for `tlog::import_tlog`.
+mavlink-tlog = "0.1.4"
 # mavlink-core 0.18's `tokio` feature pulls `futures` but forgets to enable
 # `alloc`, so `futures::lock::Mutex` fails to resolve. Forcing the default
 # (alloc-enabled) feature set here patches the unification.

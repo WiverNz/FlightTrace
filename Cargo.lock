@@ -568,6 +568,7 @@ dependencies = [
  "flighttrace-storage",
  "futures",
  "mavlink",
+ "mavlink-tlog",
  "serde",
  "serde_json",
  "sqlx",
@@ -1177,6 +1178,12 @@ dependencies = [
  "tokio",
  "tokio-serial",
 ]
+
+[[package]]
+name = "mavlink-tlog"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56dc10e28f28477a20b62fd7c248a36e34d3ea0a0aa9264d854372e18c0718a9"
 
 [[package]]
 name = "md-5"
