@@ -33,7 +33,7 @@ use tracing_subscriber::EnvFilter;
 
 use flighttrace_api::{AppState, build_with_static};
 use flighttrace_assertions::load_mission_file;
-use flighttrace_mavlink::{Dialect, MavlinkConfig, run_ingestion};
+use flighttrace_mavlink::{Dialect, MavlinkConfig, import_tlog, run_ingestion};
 use flighttrace_storage::connect;
 
 #[derive(Debug, Parser)]
@@ -99,6 +99,23 @@ enum Command {
         #[arg(long, env = "FLIGHTTRACE_OPEN")]
         open: bool,
     },
+    /// Import a recorded `.tlog` (QGroundControl, Mission Planner, MAVProxy)
+    /// as a mission run and evaluate `--mission` against it.
+    Import {
+        /// Path to the `.tlog` file.
+        tlog: PathBuf,
+        /// Path to the SQLite database file. Env: `FLIGHTTRACE_DATABASE`.
+        #[arg(
+            long,
+            env = "FLIGHTTRACE_DATABASE",
+            default_value = "./data/flighttrace.db"
+        )]
+        database: PathBuf,
+        /// Path to a mission YAML to evaluate against the imported run.
+        /// Env: `FLIGHTTRACE_MISSION`.
+        #[arg(long, env = "FLIGHTTRACE_MISSION")]
+        mission: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -128,7 +145,47 @@ fn main() -> Result<()> {
             open,
             false,
         ),
+        Some(Command::Import {
+            tlog,
+            database,
+            mission,
+        }) => run_import(&tlog, &database, mission.as_deref()),
     }
+}
+
+fn run_import(tlog: &Path, database: &Path, mission_path: Option<&Path>) -> Result<()> {
+    let mut config = MavlinkConfig::new("udp://127.0.0.1:0", Dialect::Common)
+        .context("default MAVLink config")?;
+    config.mission = match mission_path {
+        Some(path) => {
+            Some(load_mission_file(path).with_context(|| format!("load mission spec {path:?}"))?)
+        }
+        None => None,
+    };
+    let file = std::fs::File::open(tlog).with_context(|| format!("open tlog {tlog:?}"))?;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("build tokio runtime")?;
+    runtime.block_on(async move {
+        if let Some(parent) = database.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("create database parent directory {parent:?}"))?;
+        }
+        let pool = connect(&sqlite_url_for(database))
+            .await
+            .with_context(|| format!("connect to SQLite database at {database:?}"))?;
+        let run = import_tlog(&pool, std::io::BufReader::new(file), &config)
+            .await
+            .with_context(|| format!("import tlog {tlog:?}"))?
+            .ok_or_else(|| anyhow!("{tlog:?} has no vehicle HEARTBEAT"))?;
+        println!("{run}");
+        Ok(())
+    })
 }
 
 fn init_tracing() {

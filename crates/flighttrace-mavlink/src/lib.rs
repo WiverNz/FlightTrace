@@ -25,8 +25,10 @@ pub mod error;
 pub mod gap;
 pub mod listener;
 pub mod session;
+pub mod tlog;
 pub mod translate;
 
 pub use config::{Dialect, MavlinkConfig, parse_endpoint};
 pub use error::{MavlinkIngestError, MavlinkIngestResult};
 pub use listener::run_ingestion;
+pub use tlog::import_tlog;

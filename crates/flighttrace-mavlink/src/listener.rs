@@ -40,8 +40,8 @@ use crate::translate::{
 };
 
 /// One in-flight ingestion session (1:1 with a `MissionRun`).
-struct ActiveSession {
-    run_id: MissionRunId,
+pub(crate) struct ActiveSession {
+    pub(crate) run_id: MissionRunId,
     state: SessionState,
 }
 
@@ -126,9 +126,20 @@ async fn on_message(
     config: &MavlinkConfig,
     session: &mut Option<ActiveSession>,
 ) -> MavlinkIngestResult<()> {
-    let now_instant = Instant::now();
     let now_ts = Timestamp(time::OffsetDateTime::now_utc());
+    on_message_at(msg, Instant::now(), now_ts, pool, config, session).await
+}
 
+/// [`on_message`] with an explicit clock, so recorded logs replay on their
+/// own timestamps.
+pub(crate) async fn on_message_at(
+    msg: MavMessage,
+    now_instant: Instant,
+    now_ts: Timestamp,
+    pool: &SqlitePool,
+    config: &MavlinkConfig,
+    session: &mut Option<ActiveSession>,
+) -> MavlinkIngestResult<()> {
     // First HEARTBEAT bootstraps a session.
     if session.is_none() {
         let MavMessage::HEARTBEAT(hb) = &msg else {
@@ -225,9 +236,18 @@ async fn on_tick(
     pool: &SqlitePool,
     config: &MavlinkConfig,
 ) -> MavlinkIngestResult<()> {
-    let now_instant = Instant::now();
     let now_ts = Timestamp(time::OffsetDateTime::now_utc());
+    on_tick_at(active, Instant::now(), now_ts, pool, config).await
+}
 
+/// [`on_tick`] with an explicit clock.
+pub(crate) async fn on_tick_at(
+    active: &mut ActiveSession,
+    now_instant: Instant,
+    now_ts: Timestamp,
+    pool: &SqlitePool,
+    config: &MavlinkConfig,
+) -> MavlinkIngestResult<()> {
     // 1. Gap detection: emit a single event per outage.
     if let Some(ev) = check_gap(
         &mut active.state,
@@ -264,6 +284,16 @@ async fn close_session(
     mission: Option<&MissionSpec>,
 ) -> MavlinkIngestResult<()> {
     let ended_at = Timestamp(time::OffsetDateTime::now_utc());
+    close_session_at(active, pool, mission, ended_at).await
+}
+
+/// [`close_session`] with an explicit end time.
+pub(crate) async fn close_session_at(
+    active: ActiveSession,
+    pool: &SqlitePool,
+    mission: Option<&MissionSpec>,
+    ended_at: Timestamp,
+) -> MavlinkIngestResult<()> {
     let run_id = active.run_id;
     let mission_failed = active.state.mission_failed;
 
